@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environments
+.venv/
+.env/
+*.yaml
+*.yml
+
+# Large data
+data/**/*.pkl
+data/**/*.nc
+data/**/*.tif
+data/**/*.tar.gz
+data/**/*.h5
+data/**/*.hdf5
+
+# Jupyter
+.ipynb_checkpoints/
