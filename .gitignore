@@ -20,3 +20,7 @@ data/**/*.hdf5
 
 # Jupyter
 .ipynb_checkpoints/
+__pycache__/
+
+# Keep only presentation figures
+figures/*.png
