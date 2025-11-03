@@ -1,6 +1,6 @@
 # 🌧️ GNN-Based Precipitation Retrieval
 
-This repository contains the training framework for a **Graph Neural Network (GNN)** model that spatially interpolate daily precipitation using static (topography) and dynamic (ERA5 + IMERG) features with daily and 0.1 degree spatila and temporal resolution.  
+This repository contains the training framework for a **Graph Neural Network (GNN)** model that spatially interpolate daily precipitation using static (topography) and dynamic (ERA5 + IMERG) features with daily and 0.1 degree spatial and temporal resolution, respectively.  
 The graph structure is generated from DEM and GHCN gauge data, and available as a downloadable file.
 
 ---
