@@ -24,3 +24,4 @@ __pycache__/
 
 # Keep only presentation figures
 figures/*.png
+data/pyg_snapshots/
