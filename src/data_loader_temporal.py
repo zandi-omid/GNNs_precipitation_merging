@@ -39,8 +39,14 @@ class TemporalGraphDataset(Dataset):
         return len(self.files)
 
     def __getitem__(self, idx):
-        """Return data for one day."""
-        data = torch.load(self.files[idx], map_location=self.device, weights_only=False)
+        f = self.files[idx]
+        try:
+            data = torch.load(f, map_location=self.device)
+            data.x = data.x.float()
+            data.y = data.y.float() 
+        except Exception as e:
+            print(f"Warning: skipping corrupted file {f}: {e}")
+            return self.__getitem__((idx + 1) % len(self))
         return {
             "x": data.x,
             "y": data.y,
@@ -84,10 +90,7 @@ def TemporalGraphLoader(dataset, batch_size_days=32, shuffle=True):
 # 🔧 Example usage
 # ============================================================
 if __name__ == "__main__":
-    snapshots_dir = (
-        "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/"
-        "data/pyg_snapshots/daily_snapshots"
-    )
+    snapshots_dir = ("/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_snapshots/daily_snapshots_landmask")
 
     dataset = TemporalGraphDataset(snapshots_dir, device="cpu")
     loader = TemporalGraphLoader(dataset, batch_size_days=8)
