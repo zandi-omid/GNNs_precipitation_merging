@@ -1,27 +1,22 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+# Logs and training artifacts
+logs/
+lightning_logs/
 
-# Environments
-.venv/
-.env/
-*.yaml
-*.yml
+# Stats / large analysis outputs
+stats/
 
-# Large data
-data/**/*.pkl
+# Large data files in general
 data/**/*.nc
-data/**/*.tif
-data/**/*.tar.gz
 data/**/*.h5
 data/**/*.hdf5
+*.nc
+*.h5
+*.hdf5
 
-# Jupyter
+# Checkpoints / model weights
+checkpoints/
+*.ckpt
+
+# Jupyter stuff
 .ipynb_checkpoints/
-__pycache__/
-
-# Keep only presentation figures
-figures/*.png
-data/pyg_snapshots/
+*.ipynb
