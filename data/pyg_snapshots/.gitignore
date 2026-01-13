@@ -1,0 +1,7 @@
+
+# Ignore large data
+*.pt
+*.pkl
+*.tar.gz
+data/
+

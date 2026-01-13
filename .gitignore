@@ -20,3 +20,6 @@ checkpoints/
 # Jupyter stuff
 .ipynb_checkpoints/
 *.ipynb
+
+__pycache__/
+*.pyc
