@@ -23,3 +23,27 @@ checkpoints/
 
 __pycache__/
 *.pyc
+
+# =========================
+# Data / outputs (DO NOT TRACK)
+# =========================
+data/
+checkpoints/
+logs/
+lightning_logs/
+tensorboard_scalar_plots_TGCN/
+
+# PyTorch / Lightning
+*.ckpt
+*.pt
+
+# Python
+__pycache__/
+*.pyc
+
+# SLURM
+*.out
+*.err
+
+# Local envs
+.env
