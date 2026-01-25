@@ -1,0 +1,33 @@
+# configs/tgcn_train.toml
+
+[meta]
+run_name = "TGCN_T14_70train_30test"
+
+[data]
+seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T14"
+batch_size = 32
+split_ratio = 0.7
+num_workers = 4
+drop_last = true
+
+[model]
+in_channels = 2
+hidden_dim = 128
+num_layers = 3
+add_self_loops = true
+improved = false
+
+[optim]
+lr = 1e-3
+weight_decay = 0.0
+
+[trainer]
+max_epochs = 5
+precision = "16-mixed"
+log_every_n_steps = 20
+
+# DDP / multi-node settings (Lightning)
+devices = 2        # GPUs per node
+num_nodes = 5      # number of nodes
+accelerator = "gpu"
+strategy = "ddp"   # or "ddp_find_unused_parameters_false" if you want explicit

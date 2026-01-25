@@ -109,7 +109,7 @@ if __name__ == "__main__":
     trainer = Trainer(
         max_epochs=5,
         accelerator="gpu",
-        devices=2,                     # of GPUs
+        devices=1,                     # of GPUs
         strategy=DDPStrategy(find_unused_parameters=False),
         precision="16-mixed",
         log_every_n_steps=10,
