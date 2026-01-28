@@ -82,7 +82,8 @@ class TGCNLightning(pl.LightningModule):
         num_nodes: int,
         in_channels: int = 2,
         hidden_dim: int = 64,
-        num_layers: int = 1,
+        rnn_layers: int = 2,   # GRU depth
+        gcn_layers: int = 2,   # GCN depth
         lr: float = 1e-3,
         weight_decay: float = 0.0,
         add_self_loops: bool = True,
@@ -97,7 +98,8 @@ class TGCNLightning(pl.LightningModule):
             num_nodes=num_nodes,
             in_channels=in_channels,
             hidden_dim=hidden_dim,
-            num_layers=num_layers,
+            rnn_layers=rnn_layers,   # GRU depth
+            gcn_layers=gcn_layers,   # GCN depth
             add_self_loops=add_self_loops,
             improved=improved,
         )
@@ -192,9 +194,10 @@ def main():
     # Model
     parser.add_argument("--hidden_dim", type=int, default=64)
     parser.add_argument("--in_channels", type=int, default=2)
-    parser.add_argument("--num_layers", type=int, default=1)
     parser.add_argument("--add_self_loops", action="store_true", default=True)
     parser.add_argument("--improved", action="store_true", default=False)
+    parser.add_argument("--rnn_layers", type=int, default=1)
+    parser.add_argument("--gcn_layers", type=int, default=1)
 
     # Optim
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -263,7 +266,8 @@ def main():
         num_nodes=N,
         in_channels=args.in_channels,
         hidden_dim=args.hidden_dim,
-        num_layers=args.num_layers,
+        rnn_layers=args.rnn_layers,
+        gcn_layers=args.gcn_layers,
         lr=args.lr,
         weight_decay=args.weight_decay,
         add_self_loops=args.add_self_loops,

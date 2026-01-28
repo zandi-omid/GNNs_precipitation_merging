@@ -5,7 +5,7 @@ run_name = "TGCN_T14_train2005_2018_val2019"
 
 [data]
 seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T14"
-batch_size = 32
+batch_size = 16
 num_workers = 4
 
 # year-based split
@@ -16,9 +16,10 @@ test_years  = [2020, 2024]
 [model]
 in_channels = 2
 hidden_dim = 128
-num_layers = 3
 add_self_loops = true
 improved = false
+rnn_layers = 2
+gcn_layers = 2
 
 [optim]
 lr = 1e-3

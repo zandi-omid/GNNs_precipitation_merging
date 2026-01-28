@@ -64,6 +64,8 @@ METRICS = [
     "train/bias",
     "train/cc",
     "test_loss",
+    "val/mse",
+    "val/cc"
 ]
 
 # ---------------- LOAD EVENTS ----------------
