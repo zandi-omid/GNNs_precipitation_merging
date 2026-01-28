@@ -1,14 +1,17 @@
 # configs/tgcn_train.toml
 
 [meta]
-run_name = "TGCN_T14_70train_30test"
+run_name = "TGCN_T14_train2005_2018_val2019"
 
 [data]
 seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T14"
 batch_size = 32
-split_ratio = 0.7
 num_workers = 4
-drop_last = true
+
+# year-based split
+train_years = [2005, 2018]
+val_years   = [2019, 2019]
+test_years  = [2020, 2024]
 
 [model]
 in_channels = 2
@@ -31,3 +34,4 @@ devices = 2        # GPUs per node
 num_nodes = 5      # number of nodes
 accelerator = "gpu"
 strategy = "ddp"   # or "ddp_find_unused_parameters_false" if you want explicit
+

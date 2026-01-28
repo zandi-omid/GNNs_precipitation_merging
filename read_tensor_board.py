@@ -1,106 +1,115 @@
 # %%
-import os
-import re
+
+# read_tensor_board_tgcn.py
+import os, re
 import matplotlib.pyplot as plt
 from tensorboard.backend.event_processing import event_accumulator
 
-#%%
-# ---------------- CONFIG ----------------
-RUN_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/logs/TGCN_T14_70train_30test/version_0"
-OUT_DIR = "tensorboard_scalar_plots_TGCN"
-
+RUN_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/logs/TGCN_T14_70train_30test/version_1"
+OUT_DIR = os.path.join(RUN_DIR, "scalar_plots")
 os.makedirs(OUT_DIR, exist_ok=True)
 
-# ---------------- FIND LATEST EVENT FILE ----------------
-event_files = sorted(
-    f for f in os.listdir(RUN_DIR)
-    if f.startswith("events.out.tfevents")
-)
+def safe_name(s: str) -> str:
+    return re.sub(r"[^\w\-_.]+", "_", s)
 
-if not event_files:
-    raise FileNotFoundError("❌ No TensorBoard event files found.")
-
-event_file = os.path.join(RUN_DIR, event_files[-1])
-print(f"✅ Using event file:\n{event_file}")
-
-#%%
-# ---------------- LOAD EVENTS ----------------
-ea = event_accumulator.EventAccumulator(event_file)
+ea = event_accumulator.EventAccumulator(RUN_DIR)
 ea.Reload()
 
-scalar_tags = ea.Tags()["scalars"]
-print("\nAvailable scalar tags:")
-for t in scalar_tags:
-    print(" -", t)
+scalar_tags = ea.Tags().get("scalars", [])
+print("Available scalar tags:", scalar_tags)
 
-# ---------------- HELPER ----------------
-def safe_name(name: str) -> str:
-    return re.sub(r"[^\w\-_.]", "_", name)
+# Choose the tags you care about (in your case: all of them)
+tags_to_plot = scalar_tags
 
-#%%
-
-for tag in scalar_tags:
+for tag in tags_to_plot:
     events = ea.Scalars(tag)
-    print(tag, "num_points =", len(events),
-          "first =", (events[0].step, events[0].value) if events else None,
-          "last  =", (events[-1].step, events[-1].value) if events else None)
-
-#%%
-# ---------------- PLOT EACH SCALAR ----------------
-for tag in scalar_tags:
-    events = ea.Scalars(tag)
-    if len(events) == 0:
-        print(f"⚠️ {tag}: no scalar points")
-        continue
-
     steps = [e.step for e in events]
     values = [e.value for e in events]
 
-    plt.figure(figsize=(6, 4))
+    if len(values) == 0:
+        continue
 
-    if len(events) == 1:
-        # single point -> make it obvious
-        plt.scatter(steps, values, s=60)
-    else:
-        # line + markers so it's never "invisible"
-        plt.plot(steps, values, marker="o", markersize=3, linewidth=1.4)
-
-    plt.title(f"{tag} (n={len(events)})")
-    plt.xlabel("Step")
-    plt.ylabel("Value")
-    plt.grid(True, alpha=0.4)
+    plt.figure(figsize=(7, 4))
+    plt.plot(steps, values, linewidth=1.8)
+    plt.title(tag)
+    plt.xlabel("step")
+    plt.ylabel("value")
+    plt.grid(True, alpha=0.35)
     plt.tight_layout()
     plt.show()
+    out_path = os.path.join(OUT_DIR, safe_name(tag) + ".png")
+    # plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    # plt.close()
 
-#%%
-# ---------------- COMBINED FIGURE ----------------
-n = len(scalar_tags)
+    print(f"Saved: {out_path}  (n={len(values)}, step_first={steps[0]}, step_last={steps[-1]})")
+# %%
+
+# read_tensorboard_tgcn_all_in_one.py
+
+import os
+import math
+import matplotlib.pyplot as plt
+from tensorboard.backend.event_processing import event_accumulator
+
+# ---------------- CONFIG ----------------
+# RUN_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/logs/TGCN_T14_70train_30test/version_1"
+RUN_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/logs/TGCN_T14_train2005_2018_val2019/version_0/"
+OUT_FIG = os.path.join(RUN_DIR, "training_metrics_all.png")
+
+# Which metrics to plot (order matters)
+METRICS = [
+    "train/loss_step",
+    "train/mse",
+    "train/rmse",
+    "train/bias",
+    "train/cc",
+    "test_loss",
+]
+
+# ---------------- LOAD EVENTS ----------------
+ea = event_accumulator.EventAccumulator(RUN_DIR)
+ea.Reload()
+
+available = ea.Tags().get("scalars", [])
+print("Available scalar tags:", available)
+
+metrics = [m for m in METRICS if m in available]
+print("Plotting metrics:", metrics)
+
+# ---------------- FIGURE LAYOUT ----------------
+n = len(metrics)
 cols = 2
-rows = (n + 1) // cols
+rows = math.ceil(n / cols)
 
 fig, axs = plt.subplots(rows, cols, figsize=(12, 4 * rows))
 axs = axs.flatten()
 
-for i, tag in enumerate(scalar_tags):
+# ---------------- PLOTTING ----------------
+for ax, tag in zip(axs, metrics):
     events = ea.Scalars(tag)
     steps = [e.step for e in events]
     values = [e.value for e in events]
 
-    axs[i].plot(steps, values, linewidth=1.8)
-    axs[i].set_title(tag)
-    axs[i].set_xlabel("Step")
-    axs[i].set_ylabel("Value")
-    axs[i].grid(True, alpha=0.4)
+    if len(values) == 1:
+        # Single-point metric (e.g. test_loss)
+        ax.scatter(steps[0], values[0], s=80, color="red", zorder=3)
+        ax.axhline(values[0], linestyle="--", alpha=0.5)
+        ax.set_title(f"{tag} (final)")
+    else:
+        ax.plot(steps, values, linewidth=1.8)
+        ax.set_title(tag)
 
-# Hide unused axes
-for j in range(i + 1, len(axs)):
-    axs[j].axis("off")
+    ax.set_xlabel("step")
+    ax.set_ylabel("value")
+    ax.grid(True, alpha=0.35)
+
+# Hide unused subplots
+for i in range(len(metrics), len(axs)):
+    axs[i].axis("off")
 
 plt.tight_layout()
-plt.savefig(
-    os.path.join(OUT_DIR, "ALL_SCALARS.png"),
-    dpi=300,
-    bbox_inches="tight"
-)
+plt.savefig(OUT_FIG, dpi=300, bbox_inches="tight")
 plt.show()
+
+print(f"\n✅ Saved combined figure to:\n{OUT_FIG}")
 # %%

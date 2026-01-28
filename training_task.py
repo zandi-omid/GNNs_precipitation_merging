@@ -8,54 +8,52 @@ Input: 14-day window of (ERA5, IMERG) at every node -> estimate gauge precip at 
 Data: seq_*.pt files, each sample dict contains:
   x: [T, N, 2], y: [N], y_mask: [N], edge_index: [2,E], edge_weight: [E], date: str
 
-Training:
-  - chronological split over DAYS: 70% train / 30% test
-  - shuffle within train only
-  - loss uses y_mask (and ignores NaNs)
+Splits (year-based):
+  - Train: 2005–2018
+  - Val:   2019
+  - Test:  2020–2024 (NOT used in training; run later independently)
+
+Logging:
+  - train/* and val/* metrics per epoch
+  - TensorBoard: logs/<run_name>/version_*/events...
+  - Checkpoints: checkpoints/<run_name>/
 """
 
 import os
 import argparse
 from pathlib import Path
+from typing import Any, Dict, Tuple, Optional
 
 import torch
-import torch.nn.functional as F
 import pytorch_lightning as pl
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.utilities import rank_zero_info
-
-from utils.data.seq_datamodule import SpatioTemporalPTDataModule  # your datamodule file
-from models.tgcn_multifeat import TGCNRegressor
-
-import tomli as tomllib  # Python 3.11+ ; for 3.10 use: import tomli as tomllib
-from typing import Any, Dict
-
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 
-RUN_NAME = "TGCN_T14_70train_30test"
+import tomli as tomllib
+
+from utils.data.seq_datamodule import SpatioTemporalPTDataModule
+from models.tgcn_multifeat import TGCNRegressor
+
+
+RUN_NAME = "TGCN_T14_train2005_2018_val2019"
 BASE_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval"
 
-
-
-def deep_update(base: Dict[str, Any], upd: Dict[str, Any]) -> Dict[str, Any]:
-    """Recursively update dict."""
-    for k, v in upd.items():
-        if isinstance(v, dict) and isinstance(base.get(k), dict):
-            deep_update(base[k], v)
-        else:
-            base[k] = v
-    return base
 
 def load_toml_config(path: str) -> Dict[str, Any]:
     with open(path, "rb") as f:
         return tomllib.load(f)
 
+
 def flatten_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
-    out = {}
+    """
+    Flatten TOML sections into argparse keys.
+    Special-case: [meta].run_name -> run_name
+    """
+    out: Dict[str, Any] = {}
     for section, kv in cfg.items():
         if isinstance(kv, dict):
-            # special-case meta.run_name -> run_name
             if section == "meta" and "run_name" in kv:
                 out["run_name"] = kv["run_name"]
             else:
@@ -65,11 +63,22 @@ def flatten_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _as_year_tuple(v, default: Tuple[int, int]) -> Tuple[int, int]:
+    """
+    TOML lists come as python list. We accept list/tuple of length 2.
+    """
+    if v is None:
+        return default
+    if isinstance(v, (list, tuple)) and len(v) == 2:
+        return (int(v[0]), int(v[1]))
+    raise ValueError(f"Expected [y0, y1] for years, got: {v}")
+
+
 class TGCNLightning(pl.LightningModule):
     def __init__(
         self,
         edge_index: torch.Tensor,
-        edge_weight: torch.Tensor | None,
+        edge_weight: Optional[torch.Tensor],
         num_nodes: int,
         in_channels: int = 2,
         hidden_dim: int = 64,
@@ -99,46 +108,9 @@ class TGCNLightning(pl.LightningModule):
     def forward(self, x):
         return self.model(x)
 
-    def _masked_mse(self, y_hat, y, y_mask):
-        # y_hat, y: [B, N]   y_mask: [B, N]
-        mask = y_mask & ~torch.isnan(y)
-        if mask.sum() == 0:
-            return torch.tensor(0.0, device=self.device)
-        return F.mse_loss(y_hat[mask], y[mask])
-
-    def training_step(self, batch, batch_idx):
-        x = batch["x"]              # [B, T, N, F]
-        y = batch["y"]              # [B, N]
-        y_mask = batch["y_mask"]    # [B, N]
-
-        y_hat = self(x)             # [B, N]
-        loss = self._masked_mse(y_hat, y, y_mask)
-
-        B = batch["x"].shape[0]
-        self.log("train_loss", loss, prog_bar=True, on_step=True, on_epoch=True, sync_dist=True, batch_size=B)
-        return loss
-
-    def test_step(self, batch, batch_idx):
-        x = batch["x"]
-        y = batch["y"]
-        y_mask = batch["y_mask"]
-
-        y_hat = self(x)
-        loss = self._masked_mse(y_hat, y, y_mask)
-
-        B = x.shape[0]
-        self.log("test_loss", loss, prog_bar=True, on_step=False, on_epoch=True,
-                 sync_dist=True, batch_size=B)
-        return loss
-
-    def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-
-    def _masked_vectors(self, y_hat, y, y_mask):
-        """
-        Return flattened vectors (pred, obs) after applying mask and removing NaNs.
-        y_hat, y: [B, N]; y_mask: [B, N] bool
-        """
+    # ---------------- Metrics ----------------
+    @staticmethod
+    def _masked_vectors(y_hat, y, y_mask):
         mask = y_mask & torch.isfinite(y)
         if mask.sum() == 0:
             return None, None
@@ -155,28 +127,26 @@ class TGCNLightning(pl.LightningModule):
         rmse = torch.sqrt(mse)
         bias = torch.mean(diff)
 
-        # Pearson correlation coefficient
+        # Pearson CC
         pred_c = pred - pred.mean()
-        obs_c  = obs - obs.mean()
+        obs_c = obs - obs.mean()
         denom = torch.sqrt(torch.sum(pred_c**2) * torch.sum(obs_c**2))
         cc = torch.sum(pred_c * obs_c) / (denom + 1e-12)
 
         return mse, rmse, bias, cc
 
-    def _log_metrics(self, stage, y_hat, y, y_mask, batch_size):
+    def _log_epoch_metrics(self, stage: str, y_hat, y, y_mask, batch_size: int):
         mse, rmse, bias, cc = self._mse_rmse_bias_cc(y_hat, y, y_mask)
 
-        self.log(f"{stage}/mse",  mse,  prog_bar=(stage!="train"), on_step=False, on_epoch=True,
-                 sync_dist=True, batch_size=batch_size)
-        self.log(f"{stage}/rmse", rmse, prog_bar=(stage!="train"), on_step=False, on_epoch=True,
-                 sync_dist=True, batch_size=batch_size)
-        self.log(f"{stage}/bias", bias, on_step=False, on_epoch=True,
-                 sync_dist=True, batch_size=batch_size)
-        self.log(f"{stage}/cc",   cc,   prog_bar=(stage!="train"), on_step=False, on_epoch=True,
-                 sync_dist=True, batch_size=batch_size)
+        # epoch-level (so tensorboard has one point per epoch)
+        self.log(f"{stage}/mse", mse, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+        self.log(f"{stage}/rmse", rmse, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+        self.log(f"{stage}/bias", bias, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+        self.log(f"{stage}/cc", cc, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
 
-        return mse  # if you want a scalar returned
+        return mse
 
+    # ---------------- Lightning steps ----------------
     def training_step(self, batch, batch_idx):
         x = batch["x"]
         y = batch["y"]
@@ -185,40 +155,39 @@ class TGCNLightning(pl.LightningModule):
         y_hat = self(x)
         B = x.shape[0]
 
-        # Use MSE as your optimization loss
-        mse, _, _, _ = self._mse_rmse_bias_cc(y_hat, y, y_mask)
+        mse = self._log_epoch_metrics("train", y_hat, y, y_mask, batch_size=B)
 
-        # log epoch-level train metrics
-        self._log_metrics("train", y_hat, y, y_mask, batch_size=B)
-
-        # optional: step-level loss for progress bar smoothness
+        # optional step-level for progress bar smoothness
         self.log("train/loss_step", mse, prog_bar=True, on_step=True, on_epoch=False,
                  sync_dist=True, batch_size=B)
-
         return mse
 
     def validation_step(self, batch, batch_idx):
-        # This is your "holdout/test" split (last 30%)
         x = batch["x"]
         y = batch["y"]
         y_mask = batch["y_mask"]
 
         y_hat = self(x)
         B = x.shape[0]
-        self._log_metrics("holdout", y_hat, y, y_mask, batch_size=B)
+        self._log_epoch_metrics("val", y_hat, y, y_mask, batch_size=B)
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
 
 
 def main():
     parser = argparse.ArgumentParser()
-
-    # NEW
     parser.add_argument("--config", type=str, default=None, help="Path to TOML config")
 
     # Data
     parser.add_argument("--seq_dir", type=str, required=False)
-    parser.add_argument("--batch_size", type=int, default=4)
-    parser.add_argument("--split_ratio", type=float, default=0.7)
+    parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_workers", type=int, default=4)
+
+    # Year splits
+    parser.add_argument("--train_years", type=int, nargs=2, default=(2005, 2018))
+    parser.add_argument("--val_years", type=int, nargs=2, default=(2019, 2019))
+    parser.add_argument("--test_years", type=int, nargs=2, default=(2020, 2024))
 
     # Model
     parser.add_argument("--hidden_dim", type=int, default=64)
@@ -235,7 +204,7 @@ def main():
     parser.add_argument("--run_name", type=str, default=RUN_NAME)
     parser.add_argument("--max_epochs", type=int, default=10)
     parser.add_argument("--devices", type=int, default=1)
-    parser.add_argument("--num_nodes", type=int, default=1)    
+    parser.add_argument("--num_nodes", type=int, default=1)
     parser.add_argument("--strategy", type=str, default="ddp")
     parser.add_argument("--accelerator", type=str, default=None)
     parser.add_argument("--precision", type=str, default="16-mixed")
@@ -243,22 +212,20 @@ def main():
 
     args = parser.parse_args()
 
-    # -----------------------
-    # Load TOML + override CLI defaults
-    # -----------------------
+    # Load TOML and override args
     if args.config is not None:
         cfg = flatten_config(load_toml_config(args.config))
-        # overwrite argparse Namespace
         for k, v in cfg.items():
             if hasattr(args, k):
                 setattr(args, k, v)
 
-    # Allow run_name from TOML/CLI to control output folders
-    run_name = args.run_name
-
-    base_dir = Path(BASE_DIR)
-    ckpt_root = base_dir / "checkpoints" / run_name
-    log_root  = base_dir / "logs"
+        # handle year ranges if present in TOML as lists
+        if "train_years" in cfg:
+            args.train_years = _as_year_tuple(cfg["train_years"], tuple(args.train_years))
+        if "val_years" in cfg:
+            args.val_years = _as_year_tuple(cfg["val_years"], tuple(args.val_years))
+        if "test_years" in cfg:
+            args.test_years = _as_year_tuple(cfg["test_years"], tuple(args.test_years))
 
     if not args.seq_dir:
         raise ValueError("seq_dir must be provided via --seq_dir or [data].seq_dir in TOML")
@@ -266,17 +233,25 @@ def main():
     rank_zero_info(vars(args))
     seed_everything(42)
 
+    base_dir = Path(BASE_DIR)
+    ckpt_root = base_dir / "checkpoints" / args.run_name
+    log_root = base_dir / "logs"
+    ckpt_root.mkdir(parents=True, exist_ok=True)
+
     dm = SpatioTemporalPTDataModule(
         seq_dir=args.seq_dir,
         batch_size=args.batch_size,
-        split_ratio=args.split_ratio,
         num_workers=args.num_workers,
+        train_years=tuple(args.train_years),
+        val_years=tuple(args.val_years),
+        test_years=tuple(args.test_years),
     )
     dm.setup()
 
+    # Get graph + shapes from first file
     first_file = sorted(Path(args.seq_dir).glob("seq_*.pt"))[0]
     sample = torch.load(first_file, map_location="cpu", weights_only=True)
-    T, N, F_in = sample["x"].shape
+    _, N, _ = sample["x"].shape
     edge_index = sample["edge_index"].long()
     edge_weight = sample.get("edge_weight", None)
     if edge_weight is not None:
@@ -288,31 +263,27 @@ def main():
         num_nodes=N,
         in_channels=args.in_channels,
         hidden_dim=args.hidden_dim,
+        num_layers=args.num_layers,
         lr=args.lr,
         weight_decay=args.weight_decay,
         add_self_loops=args.add_self_loops,
         improved=args.improved,
-        num_layers=args.num_layers,
     )
 
-    # --- Logger (TensorBoard) ---
     logger = TensorBoardLogger(
         save_dir=str(log_root),
-        name=run_name,          # logs/<run_name>/version_*/events...
-        default_hp_metric=False
+        name=args.run_name,              # logs/<run_name>/version_*/
+        default_hp_metric=False,
     )
 
-    # --- Checkpoints ---
-    ckpt_root.mkdir(parents=True, exist_ok=True)
-
     checkpoint_cb = ModelCheckpoint(
-        dirpath=str(ckpt_root),             # checkpoints/<run_name>/
+        dirpath=str(ckpt_root),
         filename="epoch{epoch:03d}-step{step}",
         save_last=True,
         save_top_k=1,
-        monitor="holdout/mse",
+        monitor="val/mse",
         mode="min",
-        auto_insert_metric_name=False
+        auto_insert_metric_name=False,
     )
 
     trainer = Trainer(
@@ -327,14 +298,12 @@ def main():
         logger=logger,
         callbacks=[checkpoint_cb],
         num_sanity_val_steps=0,
-        limit_val_batches=0,
     )
 
     trainer.fit(model, datamodule=dm)
-    trainer.test(model, datamodule=dm)
+
 
 if __name__ == "__main__":
-    # Only strip SLURM vars when NOT running inside a SLURM job
     if "SLURM_JOB_ID" not in os.environ:
         os.environ.pop("SLURM_NTASKS", None)
         os.environ.pop("SLURM_JOB_ID", None)

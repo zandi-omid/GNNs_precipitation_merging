@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --mem-per-cpu=8G
 #SBATCH --time=1-00:00:00
-#SBATCH --job-name=tgcn_T14_L3
+#SBATCH --job-name=tgcn
 #SBATCH --output=logs/tgcn_%j.out
 #SBATCH --error=logs/tgcn_%j.err
 
