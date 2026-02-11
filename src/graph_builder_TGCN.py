@@ -24,13 +24,32 @@ from tqdm import tqdm
 # -------------------------
 # CONFIG
 # -------------------------
-T_IN = 14  # window length: t-13..t
+T_IN = 30  # window length: t-13..t
 
 GRAPH_FEAT_LABELS = Path("/xdisk/behrangi/omidzandi/GNNs/data/graphs/graph_with_features_labels.pkl")
 GRAPH_WEIGHTED     = Path("/xdisk/behrangi/omidzandi/GNNs/data/graphs/DEM_graph_weighted.pkl")
 
-OUT_DIR = Path("/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T14")
+
+BASE_OUT_ROOT = Path("/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data")
+
+# Optional: restrict time range (leave as None to use all)
+DATE_START = None  # "2008-01-01"
+DATE_END   = None  # "2012-12-31"
+
+def _tag_range(start, end):
+    if (start is None) and (end is None):
+        return "all_years"
+    if (start is not None) and (end is not None):
+        return f"{start}_to_{end}"
+    if start is not None:
+        return f"from_{start}"
+    return f"to_{end}"
+
+
+OUT_DIR = BASE_OUT_ROOT / f"pyg_sequences_tgcn_T{T_IN:03d}_{_tag_range(DATE_START, DATE_END)}"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+print(f"📁 Output directory: {OUT_DIR}")
 
 # Optional: restrict time range (leave as None to use all)
 DATE_START = None  # "2008-01-01"
@@ -185,6 +204,7 @@ for t in tqdm(range(T_IN - 1, T), desc="Saving seq_*.pt"):
         "date": time_axis_filt[t],
         "t_index": int(t),
         "t0_index": int(t0),
+        "T_IN": int(T_IN),
     }
 
     out_path = OUT_DIR / f"seq_{sample_count:05d}.pt"

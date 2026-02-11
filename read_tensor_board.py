@@ -5,7 +5,7 @@ import os, re
 import matplotlib.pyplot as plt
 from tensorboard.backend.event_processing import event_accumulator
 
-RUN_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/logs/TGCN_T14_70train_30test/version_1"
+RUN_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/logs/TGCN_T14_70train_30test/version_8"
 OUT_DIR = os.path.join(RUN_DIR, "scalar_plots")
 os.makedirs(OUT_DIR, exist_ok=True)
 
@@ -53,7 +53,7 @@ from tensorboard.backend.event_processing import event_accumulator
 
 # ---------------- CONFIG ----------------
 # RUN_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/logs/TGCN_T14_70train_30test/version_1"
-RUN_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/logs/TGCN_T14_train2005_2018_val2019/version_0/"
+RUN_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/logs/TGCN_T14_train2005_2018_val2019/version_8/"
 OUT_FIG = os.path.join(RUN_DIR, "training_metrics_all.png")
 
 # Which metrics to plot (order matters)

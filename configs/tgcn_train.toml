@@ -4,8 +4,8 @@
 run_name = "TGCN_T14_train2005_2018_val2019"
 
 [data]
-seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T14"
-batch_size = 16
+seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years"
+batch_size = 8
 num_workers = 4
 
 # year-based split
@@ -22,8 +22,13 @@ rnn_layers = 2
 gcn_layers = 2
 
 [optim]
-lr = 1e-3
+lr = 5e-4
 weight_decay = 0.0
+
+[scheduler]
+scheduler = "CosineAnnealingLR"
+t_max = 20
+eta_min = 0.0
 
 [trainer]
 max_epochs = 5
@@ -32,7 +37,7 @@ log_every_n_steps = 20
 
 # DDP / multi-node settings (Lightning)
 devices = 2        # GPUs per node
-num_nodes = 5      # number of nodes
+num_nodes = 1      # number of nodes
 accelerator = "gpu"
 strategy = "ddp"   # or "ddp_find_unused_parameters_false" if you want explicit
 

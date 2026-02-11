@@ -88,6 +88,10 @@ class TGCNLightning(pl.LightningModule):
         weight_decay: float = 0.0,
         add_self_loops: bool = True,
         improved: bool = False,
+        # ---- scheduler ----
+        scheduler: str = "CosineAnnealingLR",  # or "none"
+        t_max: int = 20,       # epochs
+        eta_min: float = 0.0,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["edge_index", "edge_weight"])
@@ -106,6 +110,10 @@ class TGCNLightning(pl.LightningModule):
 
         self.lr = lr
         self.weight_decay = weight_decay
+
+        self.scheduler_name = (scheduler or "none").strip()
+        self.t_max = int(t_max)
+        self.eta_min = float(eta_min)
 
     def forward(self, x):
         return self.model(x)
@@ -140,7 +148,6 @@ class TGCNLightning(pl.LightningModule):
     def _log_epoch_metrics(self, stage: str, y_hat, y, y_mask, batch_size: int):
         mse, rmse, bias, cc = self._mse_rmse_bias_cc(y_hat, y, y_mask)
 
-        # epoch-level (so tensorboard has one point per epoch)
         self.log(f"{stage}/mse", mse, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
         self.log(f"{stage}/rmse", rmse, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
         self.log(f"{stage}/bias", bias, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
@@ -159,9 +166,11 @@ class TGCNLightning(pl.LightningModule):
 
         mse = self._log_epoch_metrics("train", y_hat, y, y_mask, batch_size=B)
 
-        # optional step-level for progress bar smoothness
-        self.log("train/loss_step", mse, prog_bar=True, on_step=True, on_epoch=False,
-                 sync_dist=True, batch_size=B)
+        self.log(
+            "train/loss_step", mse,
+            prog_bar=True, on_step=True, on_epoch=False,
+            sync_dist=True, batch_size=B
+        )
         return mse
 
     def validation_step(self, batch, batch_idx):
@@ -173,9 +182,45 @@ class TGCNLightning(pl.LightningModule):
         B = x.shape[0]
         self._log_epoch_metrics("val", y_hat, y, y_mask, batch_size=B)
 
-    def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+    def _current_lr(self) -> float:
+        opt = self.optimizers(use_pl_optimizer=False)
+        if opt is None:
+            return float("nan")
+        return float(opt.param_groups[0]["lr"])
 
+    def on_train_epoch_end(self):
+        lr = self._current_lr()
+        self.log("train/lr", lr, on_step=False, on_epoch=True, prog_bar=False, sync_dist=True)
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(
+            self.parameters(),
+            lr=self.lr,
+            weight_decay=self.weight_decay
+        )
+
+        # ---- epoch-wise cosine annealing (Simon-like) ----
+        if self.scheduler_name.lower() in ["none", "null", "false", ""]:
+            return optimizer
+
+        if self.scheduler_name != "CosineAnnealingLR":
+            raise ValueError(f"Unsupported scheduler: {self.scheduler_name}")
+
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=self.t_max,     # epochs
+            eta_min=self.eta_min
+        )
+
+        # Make Lightning step it once per epoch
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "epoch",
+                "frequency": 1,
+            },
+        }
 
 def main():
     parser = argparse.ArgumentParser()
@@ -202,6 +247,14 @@ def main():
     # Optim
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=0.0)
+    
+    # LR Scheduler (epoch-wise)
+    parser.add_argument("--scheduler", type=str, default="CosineAnnealingLR",
+                        choices=["none", "CosineAnnealingLR"])
+    parser.add_argument("--t_max", type=int, default=20,
+                        help="CosineAnnealingLR T_max in EPOCHS (epoch-wise schedule)")
+    parser.add_argument("--eta_min", type=float, default=0.0,
+                        help="CosineAnnealingLR eta_min")
 
     # Trainer
     parser.add_argument("--run_name", type=str, default=RUN_NAME)
@@ -272,6 +325,9 @@ def main():
         weight_decay=args.weight_decay,
         add_self_loops=args.add_self_loops,
         improved=args.improved,
+        scheduler=args.scheduler,
+        t_max=args.t_max,
+        eta_min=args.eta_min,
     )
 
     logger = TensorBoardLogger(
