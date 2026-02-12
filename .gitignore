@@ -47,3 +47,12 @@ __pycache__/
 
 # Local envs
 .env
+
+# Inference outputs
+inference/
+*.npz
+*.nc
+
+# logs / checkpoints
+logs/
+checkpoints/

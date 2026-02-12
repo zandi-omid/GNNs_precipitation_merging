@@ -1,7 +1,7 @@
 # configs/tgcn_train.toml
 
 [meta]
-run_name = "TGCN_T14_train2005_2018_val2019"
+run_name = "TGCN_T30_linearMSE_train2005_2018_val2019"
 
 [data]
 seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years"
@@ -27,17 +27,24 @@ weight_decay = 0.0
 
 [scheduler]
 scheduler = "CosineAnnealingLR"
-t_max = 20
+t_max = 40
 eta_min = 0.0
 
 [trainer]
-max_epochs = 5
+max_epochs = 40
 precision = "16-mixed"
+#precision = "32"
 log_every_n_steps = 20
+
+[transform]
+x_transform = "none"
+y_transform = "none"
+x_clip_min = 0.0
+y_clip_min = 0.0
 
 # DDP / multi-node settings (Lightning)
 devices = 2        # GPUs per node
-num_nodes = 1      # number of nodes
+num_nodes = 5      # number of nodes
 accelerator = "gpu"
 strategy = "ddp"   # or "ddp_find_unused_parameters_false" if you want explicit
 

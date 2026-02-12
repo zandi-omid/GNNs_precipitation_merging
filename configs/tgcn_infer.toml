@@ -1,0 +1,20 @@
+[meta]
+run_name = "TGCN_T30_log_normal_test2020_2024"
+
+[data]
+seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years"
+ckpt    = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/checkpoints/TGCN_T30_log_normal_train2005_2018_val2019/last.ckpt"
+out_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/TGCN_T30_log_normal_test2020_2024"
+test_years = [2020, 2024]
+
+[compute]
+batch_size = 64
+num_workers = 4
+amp = true
+
+[transforms]
+x_transform = "log1p"
+y_transform = "log1p"
+x_clip_min = 0.0
+y_clip_min = 0.0
+clamp_min = 0.0

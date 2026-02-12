@@ -36,6 +36,7 @@ import tomli as tomllib
 from utils.data.seq_datamodule import SpatioTemporalPTDataModule
 from models.tgcn_multifeat import TGCNRegressor
 
+import torch.nn.functional as F
 
 RUN_NAME = "TGCN_T14_train2005_2018_val2019"
 BASE_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval"
@@ -73,7 +74,6 @@ def _as_year_tuple(v, default: Tuple[int, int]) -> Tuple[int, int]:
         return (int(v[0]), int(v[1]))
     raise ValueError(f"Expected [y0, y1] for years, got: {v}")
 
-
 class TGCNLightning(pl.LightningModule):
     def __init__(
         self,
@@ -82,15 +82,20 @@ class TGCNLightning(pl.LightningModule):
         num_nodes: int,
         in_channels: int = 2,
         hidden_dim: int = 64,
-        rnn_layers: int = 2,   # GRU depth
-        gcn_layers: int = 2,   # GCN depth
+        rnn_layers: int = 2,
+        gcn_layers: int = 2,
         lr: float = 1e-3,
         weight_decay: float = 0.0,
         add_self_loops: bool = True,
         improved: bool = False,
-        # ---- scheduler ----
-        scheduler: str = "CosineAnnealingLR",  # or "none"
-        t_max: int = 20,       # epochs
+        # ---- NEW: transforms / clipping ----
+        x_transform: str = "none",     # "none" | "log1p"
+        y_transform: str = "none",     # "none" | "log1p"
+        x_clip_min: Optional[float] = None,  # e.g., 0.0
+        y_clip_min: Optional[float] = None,  # e.g., 0.0
+        # ---- NEW: scheduler ----
+        scheduler: str = "none",       # "none" | "CosineAnnealingLR"
+        t_max: int = 20,
         eta_min: float = 0.0,
     ):
         super().__init__()
@@ -102,8 +107,8 @@ class TGCNLightning(pl.LightningModule):
             num_nodes=num_nodes,
             in_channels=in_channels,
             hidden_dim=hidden_dim,
-            rnn_layers=rnn_layers,   # GRU depth
-            gcn_layers=gcn_layers,   # GCN depth
+            rnn_layers=rnn_layers,
+            gcn_layers=gcn_layers,
             add_self_loops=add_self_loops,
             improved=improved,
         )
@@ -111,16 +116,55 @@ class TGCNLightning(pl.LightningModule):
         self.lr = lr
         self.weight_decay = weight_decay
 
-        self.scheduler_name = (scheduler or "none").strip()
+        self.x_transform = (x_transform or "none").lower()
+        self.y_transform = (y_transform or "none").lower()
+        self.x_clip_min = x_clip_min
+        self.y_clip_min = y_clip_min
+
+        self.scheduler_name = (scheduler or "none").lower()
         self.t_max = int(t_max)
         self.eta_min = float(eta_min)
 
     def forward(self, x):
-        return self.model(x)
+        x = self._apply_x_transform(x)
+        y_hat = self.model(x)
+        # enforce non-negative precip in mm/day
+        return F.softplus(y_hat)
+
+    # ---------------- Transforms ----------------
+    def _apply_x_transform(self, x: torch.Tensor) -> torch.Tensor:
+        # x: [B, T, N, F] (from datamodule) or [T, N, F] (if single)
+        if self.x_clip_min is not None:
+            x = torch.clamp(x, min=float(self.x_clip_min))
+
+        if self.x_transform == "log1p":
+            # safe log1p for x >= 0 (we already clipped)
+            x = torch.log1p(x)
+        elif self.x_transform == "none":
+            pass
+        else:
+            raise ValueError(f"Unknown x_transform: {self.x_transform}")
+
+        return x
+
+    def _apply_y_transform(self, y: torch.Tensor) -> torch.Tensor:
+        # y: [B, N] or [N]
+        if self.y_clip_min is not None:
+            y = torch.clamp(y, min=float(self.y_clip_min))
+
+        if self.y_transform == "log1p":
+            y = torch.log1p(y)
+        elif self.y_transform == "none":
+            pass
+        else:
+            raise ValueError(f"Unknown y_transform: {self.y_transform}")
+
+        return y
 
     # ---------------- Metrics ----------------
     @staticmethod
     def _masked_vectors(y_hat, y, y_mask):
+        # y_mask expected bool tensor same shape as y
         mask = y_mask & torch.isfinite(y)
         if mask.sum() == 0:
             return None, None
@@ -137,7 +181,6 @@ class TGCNLightning(pl.LightningModule):
         rmse = torch.sqrt(mse)
         bias = torch.mean(diff)
 
-        # Pearson CC
         pred_c = pred - pred.mean()
         obs_c = obs - obs.mean()
         denom = torch.sqrt(torch.sum(pred_c**2) * torch.sum(obs_c**2))
@@ -157,20 +200,27 @@ class TGCNLightning(pl.LightningModule):
 
     # ---------------- Lightning steps ----------------
     def training_step(self, batch, batch_idx):
-        x = batch["x"]
-        y = batch["y"]
+        x = batch["x"]          # [B, T, N, F]
+        y = batch["y"]          # [B, N]  (or [N] depending on collate)
         y_mask = batch["y_mask"]
 
+        x = self._apply_x_transform(x)
+        y = self._apply_y_transform(y)
+
         y_hat = self(x)
-        B = x.shape[0]
+        B = x.shape[0] if x.ndim >= 1 else 1
 
         mse = self._log_epoch_metrics("train", y_hat, y, y_mask, batch_size=B)
 
-        self.log(
-            "train/loss_step", mse,
-            prog_bar=True, on_step=True, on_epoch=False,
-            sync_dist=True, batch_size=B
-        )
+        # step-level loss for progress bar
+        self.log("train/loss_step", mse, prog_bar=True, on_step=True, on_epoch=False,
+                 sync_dist=True, batch_size=B)
+
+        # log LR (nice for cosine anneal sanity)
+        opt = self.optimizers()
+        if opt is not None and len(opt.param_groups) > 0:
+            self.log("lr", opt.param_groups[0]["lr"], on_step=True, on_epoch=False, prog_bar=False, sync_dist=True)
+
         return mse
 
     def validation_step(self, batch, batch_idx):
@@ -178,49 +228,36 @@ class TGCNLightning(pl.LightningModule):
         y = batch["y"]
         y_mask = batch["y_mask"]
 
+        x = self._apply_x_transform(x)
+        y = self._apply_y_transform(y)
+
         y_hat = self(x)
-        B = x.shape[0]
+        B = x.shape[0] if x.ndim >= 1 else 1
+
         self._log_epoch_metrics("val", y_hat, y, y_mask, batch_size=B)
 
-    def _current_lr(self) -> float:
-        opt = self.optimizers(use_pl_optimizer=False)
-        if opt is None:
-            return float("nan")
-        return float(opt.param_groups[0]["lr"])
-
-    def on_train_epoch_end(self):
-        lr = self._current_lr()
-        self.log("train/lr", lr, on_step=False, on_epoch=True, prog_bar=False, sync_dist=True)
-
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(
-            self.parameters(),
-            lr=self.lr,
-            weight_decay=self.weight_decay
-        )
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
 
-        # ---- epoch-wise cosine annealing (Simon-like) ----
-        if self.scheduler_name.lower() in ["none", "null", "false", ""]:
+        if self.scheduler_name in ("none", "", None):
             return optimizer
 
-        if self.scheduler_name != "CosineAnnealingLR":
-            raise ValueError(f"Unsupported scheduler: {self.scheduler_name}")
+        if self.scheduler_name == "cosineannealinglr":
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=self.t_max,     # epoch-wise in Lightning by default
+                eta_min=self.eta_min,
+            )
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {
+                    "scheduler": scheduler,
+                    "interval": "epoch",   # epoch-wise (matches Simon)
+                    "frequency": 1,
+                },
+            }
 
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            T_max=self.t_max,     # epochs
-            eta_min=self.eta_min
-        )
-
-        # Make Lightning step it once per epoch
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "epoch",
-                "frequency": 1,
-            },
-        }
+        raise ValueError(f"Unknown scheduler: {self.scheduler_name}")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -255,6 +292,12 @@ def main():
                         help="CosineAnnealingLR T_max in EPOCHS (epoch-wise schedule)")
     parser.add_argument("--eta_min", type=float, default=0.0,
                         help="CosineAnnealingLR eta_min")
+
+    # Normalizer
+    parser.add_argument("--x_transform", type=str, default="log1p", choices=["none", "log1p"])
+    parser.add_argument("--y_transform", type=str, default="log1p", choices=["none", "log1p"])
+    parser.add_argument("--x_clip_min", type=float, default=0.0)
+    parser.add_argument("--y_clip_min", type=float, default=0.0)
 
     # Trainer
     parser.add_argument("--run_name", type=str, default=RUN_NAME)
@@ -328,6 +371,10 @@ def main():
         scheduler=args.scheduler,
         t_max=args.t_max,
         eta_min=args.eta_min,
+        x_transform=args.x_transform,
+        y_transform=args.y_transform,
+        x_clip_min=args.x_clip_min,
+        y_clip_min=args.y_clip_min,
     )
 
     logger = TensorBoardLogger(

@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH --account=xdong
 #SBATCH --partition=gpu_standard
-#SBATCH --nodes=1
+#SBATCH --nodes=5
 #SBATCH --gres=gpu:2
 #SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=2
 #SBATCH --mem-per-cpu=8G
-#SBATCH --time=2:00:00
+#SBATCH --time=12:00:00
 #SBATCH --job-name=tgcn
 #SBATCH --output=logs/tgcn_%j.out
 #SBATCH --error=logs/tgcn_%j.err
