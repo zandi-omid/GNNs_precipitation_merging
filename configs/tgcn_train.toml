@@ -1,17 +1,19 @@
-# configs/tgcn_train.toml
-
 [meta]
-run_name = "TGCN_T30_linearMSE_train2005_2018_val2019"
+run_name = "TGCN_T30_quantiles_train2005_2018_val2019_fixed"
 
 [data]
 seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years"
 batch_size = 8
 num_workers = 4
-
-# year-based split
 train_years = [2005, 2018]
 val_years   = [2019, 2019]
 test_years  = [2020, 2024]
+
+[loss]
+name = "quantile"           # mse / huber / quantile
+n_quantiles = 32
+crossing_weight = 0.0
+delta = 1.0
 
 [model]
 in_channels = 2
@@ -26,15 +28,9 @@ lr = 5e-4
 weight_decay = 0.0
 
 [scheduler]
-scheduler = "CosineAnnealingLR"
-t_max = 40
+name = "CosineAnnealingLR"  # none / CosineAnnealingLR
+t_max = 100
 eta_min = 0.0
-
-[trainer]
-max_epochs = 40
-precision = "16-mixed"
-#precision = "32"
-log_every_n_steps = 20
 
 [transform]
 x_transform = "none"
@@ -42,9 +38,11 @@ y_transform = "none"
 x_clip_min = 0.0
 y_clip_min = 0.0
 
-# DDP / multi-node settings (Lightning)
-devices = 2        # GPUs per node
-num_nodes = 5      # number of nodes
+[trainer]
+max_epochs = 100
+precision = "16-mixed"
+log_every_n_steps = 20
+devices = 2
+num_nodes = 5
 accelerator = "gpu"
-strategy = "ddp"   # or "ddp_find_unused_parameters_false" if you want explicit
-
+strategy = "ddp"

@@ -286,9 +286,11 @@ class TGCNRegressor(nn.Module):
         gcn_hidden: Optional[int] = None,
         add_self_loops: bool = True,
         improved: bool = False,
+        out_channels: int = 1,   # NEW: Q
     ):
         super().__init__()
         self.num_nodes = int(num_nodes)
+        self.out_channels = int(out_channels)
 
         A_idx, A_val = build_normalized_adjacency_coo(
             edge_index=edge_index,
@@ -312,14 +314,16 @@ class TGCNRegressor(nn.Module):
             gcn_layers=gcn_layers,
             gcn_hidden=gcn_hidden,
         )
-
-        self.head = nn.Linear(hidden_dim, 1)
+        # output Q channels per node
+        self.head = nn.Linear(hidden_dim, self.out_channels)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         x: [B,T,N,F]
-        returns: [B,N]
+        returns:
+          - if out_channels == 1: [B,N,1]
+          - else:                [B,N,Q]
         """
-        h_last = self.backbone(x)             # [B,N,H]
-        y_hat = self.head(h_last).squeeze(-1) # [B,N]
+        h_last = self.backbone(x)          # [B,N,H]
+        y_hat = self.head(h_last)          # [B,N,Q]
         return y_hat

@@ -1,7 +1,7 @@
 import xarray as xr
 import numpy as np
 
-ds = xr.open_dataset("/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/TGCN_T30_log_normal_test2020_2024/pred_inputs_daily_maps.nc")
+ds = xr.open_dataset("/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/TGCN_T30_linearMSE_test2020_2024/pred_inputs_daily_maps.nc")
 
 m = ds["gauge_mask"].astype(bool)
 

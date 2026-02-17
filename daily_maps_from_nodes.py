@@ -13,9 +13,9 @@ import torch
 # -------------------------
 GRAPH_PKL = Path("/xdisk/behrangi/omidzandi/GNNs/data/graphs/graph_with_features_labels.pkl")
 
-PRED_NPZ  = Path("/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/TGCN_T30_log_normal_test2020_2024/preds_merged.npz")
+PRED_NPZ  = Path("/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/TGCN_T30_linearMSE_test2020_2024/preds_merged.npz")
 
-OUT_NC = Path("/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/TGCN_T30_log_normal_test2020_2024/pred_inputs_daily_maps.nc")
+OUT_NC = Path("/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/TGCN_T30_linearMSE_test2020_2024/pred_inputs_daily_maps.nc")
 
 
 def main():
