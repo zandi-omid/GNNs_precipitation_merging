@@ -13,7 +13,12 @@ Distributed inference for trained TGCN model (SLURM multi-rank sharding)
 
 Outputs (merged):
   dates: [n_samples]  (YYYY-MM-DD)
-  preds: [n_samples, N]  (mm/day if y_transform inverted)
+  pred_point: [n_samples, N]  (median for quantile model; point for MSE model)
+  pred_mean:  [n_samples, N]  (expected value from quantiles; only for quantile model)
+  pred_q_sel: [n_samples, N, K] (selected quantiles; only for quantile model)
+  tau_sel:    [K]
+  pred_q_full:[n_samples, N, Q] (optional; only for quantile model)
+  tau_full:   [Q]
 """
 
 from __future__ import annotations
@@ -34,6 +39,13 @@ import tomli as tomllib
 # Import your Lightning module
 from training_task import TGCNLightning
 
+# Quantile helpers you placed in:
+# gnn_precipitation_retrieval/utils/inference/inference_utils.py
+from utils.inference.inference_utils import (
+    get_tau_full,
+    pick_tau_indices,
+    quantile_expected_value,
+)
 
 # -------------------------------
 # TOML helpers (same style as training)
@@ -65,9 +77,8 @@ def _as_year_tuple(v, default: Tuple[int, int]) -> Tuple[int, int]:
         return (int(v[0]), int(v[1]))
     raise ValueError(f"Expected [y0, y1] for years, got: {v}")
 
-
 # -------------------------------
-# SLURM rank / GPU binding (same logic as your orbit script)
+# SLURM rank / GPU binding
 # -------------------------------
 def get_rank_and_world() -> Tuple[int, int]:
     rank = int(os.environ.get("SLURM_PROCID", 0))
@@ -80,7 +91,6 @@ def get_device_for_rank(rank: int) -> torch.device:
     if torch.cuda.is_available() and n_gpus > 0:
         return torch.device(f"cuda:{local_rank}")
     return torch.device("cpu")
-
 
 # -------------------------------
 # Dataset
@@ -100,21 +110,16 @@ class SeqPTDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         p = self.files[idx]
-        # weights_only exists on newer torch; keep it robust
         try:
             d = torch.load(p, map_location="cpu", weights_only=True)
         except TypeError:
             d = torch.load(p, map_location="cpu")
-        # We only need x + date for inference
         return {"x": d["x"].float(), "date": d["date"]}
 
-
 def collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
-    # x: stack to [B,T,N,F]
-    x = torch.stack([b["x"] for b in batch], dim=0)
+    x = torch.stack([b["x"] for b in batch], dim=0)  # [B,T,N,F]
     dates = [b["date"] for b in batch]
     return {"x": x, "date": dates}
-
 
 # -------------------------------
 # Transform inversion (targets)
@@ -126,7 +131,6 @@ def inverse_y_transform(y_hat: torch.Tensor, y_transform: str) -> torch.Tensor:
     if y_transform == "none":
         return y_hat
     raise ValueError(f"Unknown y_transform: {y_transform}")
-
 
 # -------------------------------
 # File listing + filtering by years
@@ -147,10 +151,8 @@ def filter_files_by_years(files: List[Path], years: Tuple[int, int]) -> List[Pat
             if y0 <= yr <= y1:
                 out.append(p)
         except Exception:
-            # Skip corrupted/unreadable samples
             continue
     return out
-
 
 # -------------------------------
 # Inference
@@ -164,39 +166,105 @@ def run_inference(
     y_transform: str,
     clamp_min: float = 0.0,
     amp: bool = True,
-) -> Tuple[np.ndarray, np.ndarray]:
+    tau_sel: Optional[list[float]] = None,
+    save_full_quantiles: bool = True,
+    compute_expected: bool = True,
+    enforce_monotonic: bool = True,
+) -> Dict[str, np.ndarray]:
+
     model.eval()
     model.to(device)
 
-    all_dates: List[str] = []
-    all_preds: List[np.ndarray] = []
+    # Detect whether this is a quantile model
+    # (loss_name saved in hparams, and/or out_channels > 1)
+    loss_name = (getattr(model, "loss_name", "") or "").lower()
+    out_channels = int(getattr(getattr(model, "model", None), "out_channels", 1))
+    is_quantile = (loss_name == "quantile") or (out_channels > 1)
+
+    # Quantile grid from model (should match training: make_quantiles(Q))
+    tau_full = get_tau_full(model) if is_quantile else None  # torch.Tensor [Q] on CPU
+    sel_idx = pick_tau_indices(tau_full, tau_sel) if (is_quantile and tau_sel) else None
+
+    all_dates: list[str] = []
+    out_point: list[np.ndarray] = []
+    out_full: list[np.ndarray] = []
+    out_sel: list[np.ndarray] = []
+    out_mean: list[np.ndarray] = []
 
     use_amp = amp and (device.type == "cuda")
 
     for batch in loader:
-        x = batch["x"].to(device)          # [B,T,N,F]
-        dates = batch["date"]              # list[str], length B
+        x = batch["x"].to(device)     # [B,T,N,F]
+        dates = batch["date"]         # list[str]
 
         if use_amp:
             with torch.autocast(device_type="cuda", dtype=torch.float16):
-                y_hat = model(x)           # [B,N] (your forward should apply x_transform)
+                y_hat = model(x)
         else:
             y_hat = model(x)
 
-        # invert y transform to mm/day
+        # y_hat is either [B,N,1] or [B,N,Q]
         y_hat = inverse_y_transform(y_hat, y_transform)
 
-        # physical clamp
         if clamp_min is not None:
             y_hat = torch.clamp(y_hat, min=float(clamp_min))
 
         all_dates.extend(dates)
-        all_preds.append(y_hat.detach().cpu().float().numpy())
 
-    preds = np.concatenate(all_preds, axis=0) if all_preds else np.empty((0, 0), dtype=np.float32)
-    dates = np.array(all_dates, dtype="U10")
-    return dates, preds
+        if not is_quantile:
+            # [B,N,1] -> [B,N]
+            out_point.append(y_hat.squeeze(-1).detach().cpu().float().numpy())
+            continue
 
+        # Quantile model: ensure shape [B,N,Q]
+        if y_hat.ndim != 3:
+            raise ValueError(f"Expected quantile output [B,N,Q], got {tuple(y_hat.shape)}")
+
+        if enforce_monotonic:
+            # Sort across Q to enforce non-crossing at inference time
+            y_hat = torch.sort(y_hat, dim=-1).values
+
+        # median index = closest tau to 0.5
+        tau_np = tau_full.numpy()
+        mid_idx = int(np.argmin(np.abs(tau_np - 0.5)))
+        med = y_hat[:, :, mid_idx]  # [B,N]
+        out_point.append(med.detach().cpu().float().numpy())
+
+        if save_full_quantiles:
+            out_full.append(y_hat.detach().cpu().float().numpy())
+
+        if sel_idx is not None:
+            out_sel.append(y_hat[:, :, sel_idx].detach().cpu().float().numpy())
+
+        if compute_expected:
+            mean = quantile_expected_value(y_hat, tau_full)  # [B,N]
+            out_mean.append(mean.detach().cpu().float().numpy())
+
+    result: Dict[str, np.ndarray] = {
+        "dates": np.array(all_dates, dtype="U10"),
+        "pred_point": np.concatenate(out_point, axis=0) if out_point else np.empty((0, 0), np.float32),
+    }
+
+    if is_quantile:
+        result["tau_full"] = tau_full.numpy().astype(np.float32)
+
+        if save_full_quantiles:
+            result["pred_q_full"] = (
+                np.concatenate(out_full, axis=0) if out_full else np.empty((0, 0, 0), np.float32)
+            )
+
+        if sel_idx is not None:
+            result["tau_sel"] = np.array(tau_sel, dtype=np.float32)
+            result["pred_q_sel"] = (
+                np.concatenate(out_sel, axis=0) if out_sel else np.empty((0, 0, 0), np.float32)
+            )
+
+        if compute_expected:
+            result["pred_mean"] = (
+                np.concatenate(out_mean, axis=0) if out_mean else np.empty((0, 0), np.float32)
+            )
+
+    return result
 
 # -------------------------------
 # Merge helper
@@ -204,6 +272,7 @@ def run_inference(
 def merge_rank_outputs(out_dir: Path, world: int, merged_name: str = "preds_merged.npz") -> Path:
     """
     Rank 0 waits for all per-rank files to exist, then merges and sorts by date.
+    Supports arbitrary prediction keys (pred_point, pred_mean, pred_q_sel, pred_q_full, etc).
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     rank_files = [out_dir / f"preds_rank{r:03d}.npz" for r in range(world)]
@@ -215,26 +284,39 @@ def merge_rank_outputs(out_dir: Path, world: int, merged_name: str = "preds_merg
             break
         time.sleep(10)
 
-    all_dates = []
-    all_preds = []
+    # Load all rank outputs
+    zs = [np.load(p, allow_pickle=False) for p in rank_files]
 
-    for p in rank_files:
-        z = np.load(p, allow_pickle=False)
-        all_dates.append(z["dates"])
-        all_preds.append(z["preds"])
+    # Determine keys (assume all ranks save the same keys)
+    keys = list(zs[0].files)
+    if "dates" not in keys:
+        raise ValueError("Per-rank npz must contain 'dates'")
 
-    dates = np.concatenate(all_dates, axis=0)
-    preds = np.concatenate(all_preds, axis=0)
+    # Concatenate per key
+    merged: Dict[str, np.ndarray] = {}
+    for k in keys:
+        arrs = [z[k] for z in zs]
+        if k in ("tau_full", "tau_sel"):
+            # identical across ranks (keep rank0)
+            merged[k] = arrs[0]
+        else:
+            merged[k] = np.concatenate(arrs, axis=0) if len(arrs) > 1 else arrs[0]
 
-    # Sort by date string
+    # Sort by date string (and apply same order to arrays with first dim = n_samples)
+    dates = merged["dates"]
     order = np.argsort(dates)
-    dates = dates[order]
-    preds = preds[order]
+    merged["dates"] = dates[order]
+
+    for k, v in list(merged.items()):
+        if k in ("dates", "tau_full", "tau_sel"):
+            continue
+        # Sort arrays that are sample-aligned
+        if isinstance(v, np.ndarray) and v.ndim >= 1 and v.shape[0] == order.shape[0]:
+            merged[k] = v[order]
 
     merged_path = out_dir / merged_name
-    np.savez_compressed(merged_path, dates=dates, preds=preds)
+    np.savez_compressed(merged_path, **merged)
     return merged_path
-
 
 # -------------------------------
 # Main
@@ -242,6 +324,22 @@ def merge_rank_outputs(out_dir: Path, world: int, merged_name: str = "preds_merg
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, required=True, help="Path to TOML config")
+
+    # NEW: CLI override for selected quantiles
+    parser.add_argument(
+        "--tau-sel",
+        type=float,
+        nargs="+",
+        default=[0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95],
+        help="Selected quantiles to save (only used for quantile models).",
+    )
+
+    # Optional convenience flags
+    parser.add_argument("--save-full-quantiles", action="store_true", help="Save full Q quantiles (pred_q_full).")
+    parser.add_argument("--no-save-full-quantiles", action="store_true", help="Do NOT save full Q quantiles.")
+    parser.add_argument("--no-expected", action="store_true", help="Do NOT compute expected value (pred_mean).")
+    parser.add_argument("--no-monotonic", action="store_true", help="Do NOT enforce monotonic quantiles (sorting).")
+
     args = parser.parse_args()
 
     cfg = flatten_config(load_toml_config(args.config))
@@ -250,6 +348,12 @@ def main():
     seq_dir = Path(cfg["seq_dir"])
     ckpt = Path(cfg["ckpt"])
     out_dir = Path(cfg.get("out_dir", seq_dir / "inference_outputs"))
+
+    # Inference
+    tau_sel = cfg.get("tau_sel", None)
+    save_full_q = bool(cfg.get("save_full_quantiles", True))
+    compute_expected = bool(cfg.get("compute_expected", True))
+    enforce_monotonic = bool(cfg.get("enforce_monotonic", True))
 
     # Split
     test_years = _as_year_tuple(cfg.get("test_years", [2020, 2024]), (2020, 2024))
@@ -260,7 +364,7 @@ def main():
     amp = bool(cfg.get("amp", True))
 
     # Transforms (must match training)
-    y_transform = str(cfg.get("y_transform", "log1p"))
+    y_transform = str(cfg.get("y_transform", "none"))
     clamp_min = float(cfg.get("clamp_min", 0.0))
 
     rank, world = get_rank_and_world()
@@ -269,9 +373,23 @@ def main():
     # Avoid CPU oversubscription
     torch.set_num_threads(1)
 
+    # Resolve tau selection: CLI overrides TOML if provided
+    tau_sel = args.tau_sel if args.tau_sel is not None else cfg.get("tau_sel", None)
+
+    # Resolve saving options
+    if args.save_full_quantiles and args.no_save_full_quantiles:
+        raise ValueError("Choose only one of --save-full-quantiles or --no-save-full-quantiles")
+    save_full_quantiles = bool(cfg.get("save_full_quantiles", False))
+    if args.save_full_quantiles:
+        save_full_quantiles = True
+    if args.no_save_full_quantiles:
+        save_full_quantiles = False
+
+    compute_expected = not args.no_expected
+    enforce_monotonic = not args.no_monotonic
+
     if rank == 0:
         out_dir.mkdir(parents=True, exist_ok=True)
-        # dump resolved config for reproducibility
         with open(out_dir / "inference_resolved_config.json", "w") as f:
             json.dump(
                 {
@@ -285,6 +403,10 @@ def main():
                     "y_transform": y_transform,
                     "clamp_min": clamp_min,
                     "world_size": world,
+                    "tau_sel": tau_sel,
+                    "save_full_quantiles": save_full_quantiles,
+                    "compute_expected": compute_expected,
+                    "enforce_monotonic": enforce_monotonic,
                 },
                 f,
                 indent=2,
@@ -297,7 +419,7 @@ def main():
 
     test_files = filter_files_by_years(all_files, test_years)
 
-    # 2) shard like orbit script
+    # 2) shard
     my_files = test_files[rank::world]
 
     print(
@@ -307,16 +429,26 @@ def main():
     )
 
     if len(my_files) == 0:
-        # still participate so rank 0 can merge cleanly
         out_dir.mkdir(parents=True, exist_ok=True)
         empty_path = out_dir / f"preds_rank{rank:03d}.npz"
-        np.savez_compressed(empty_path, dates=np.array([], dtype="U10"), preds=np.empty((0, 0), dtype=np.float32))
+        empty = {
+            "dates": np.array([], dtype="U10"),
+            "pred_point": np.empty((0, 0), dtype=np.float32),
+            "pred_mean": np.empty((0, 0), dtype=np.float32),
+            "pred_q_sel": np.empty((0, 0, 0), dtype=np.float32),
+            "tau_sel": np.array(tau_sel if tau_sel is not None else [], dtype=np.float32),
+        }
+        if save_full_quantiles:
+            empty["pred_q_full"] = np.empty((0, 0, 0), dtype=np.float32)
+            # tau_full unknown here; rank0 will still write it from its own inference
+        np.savez_compressed(empty_path, **empty)
+
         if rank == 0:
             merged = merge_rank_outputs(out_dir, world)
             print(f"[Rank 0] ✅ Saved merged predictions to: {merged}", flush=True)
         return
 
-    # 3) dataset/loader for this shard
+    # 3) loader
     ds = SeqPTDataset(my_files)
     loader = DataLoader(
         ds,
@@ -328,17 +460,19 @@ def main():
         drop_last=False,
     )
 
-    # 4) load model
-    # --- get graph from any seq_*.pt (same graph for all samples) ---
+    # 4) load model (+ graph buffers)
     first_file = sorted(Path(seq_dir).glob("seq_*.pt"))[0]
-    sample = torch.load(first_file, map_location="cpu", weights_only=True)
+    try:
+        sample = torch.load(first_file, map_location="cpu", weights_only=True)
+    except TypeError:
+        sample = torch.load(first_file, map_location="cpu")
 
     edge_index = sample["edge_index"].long()
     edge_weight = sample.get("edge_weight", None)
     if edge_weight is not None:
         edge_weight = edge_weight.float()
 
-    _, N, F = sample["x"].shape  # x: [T, N, F]
+    _, N, _F = sample["x"].shape  # x: [T, N, F]
 
     model = TGCNLightning.load_from_checkpoint(
         str(ckpt),
@@ -350,26 +484,37 @@ def main():
     )
 
     # 5) run inference
-    dates, preds = run_inference(
+    out = run_inference(
         model=model,
         loader=loader,
         device=device,
         y_transform=y_transform,
         clamp_min=clamp_min,
         amp=amp,
+        tau_sel=tau_sel,
+        save_full_quantiles=save_full_q,
+        compute_expected=compute_expected,
+        enforce_monotonic=enforce_monotonic,
     )
 
     # 6) write per-rank output
     out_dir.mkdir(parents=True, exist_ok=True)
     rank_out = out_dir / f"preds_rank{rank:03d}.npz"
-    np.savez_compressed(rank_out, dates=dates, preds=preds)
-    print(f"[Rank {rank}] ✅ Wrote: {rank_out}  dates={dates.shape} preds={preds.shape}", flush=True)
+    np.savez_compressed(rank_out, **out)
+
+    msg = f"[Rank {rank}] ✅ Wrote: {rank_out} dates={out['dates'].shape} point={out['pred_point'].shape}"
+    if "pred_mean" in out:
+        msg += f" mean={out['pred_mean'].shape}"
+    if "pred_q_sel" in out:
+        msg += f" q_sel={out['pred_q_sel'].shape}"
+    if "pred_q_full" in out:
+        msg += f" q_full={out['pred_q_full'].shape}"
+    print(msg, flush=True)
 
     # 7) merge on rank 0
     if rank == 0:
         merged = merge_rank_outputs(out_dir, world)
         print(f"[Rank 0] ✅ Saved merged predictions to: {merged}", flush=True)
-
 
 if __name__ == "__main__":
     # avoid SLURM env confusion if running interactively
