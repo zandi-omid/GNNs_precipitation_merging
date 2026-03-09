@@ -4,7 +4,7 @@
 Build TGCN-ready sequence dataset for retrospective precipitation estimation
 ---------------------------------------------------------------------------
 Each sample corresponds to a target day t and contains:
-  x: [T_in, N, F]  where T_in=14 (t-13..t), F=2 (ERA5, IMERG)
+  x: [T_in, N, F]  where T_in=14 (t-13..t), F=3 (ERA5, IMERG, IDW5_train)
   y: [N]           gauge precip at day t (NaN if missing)
   y_mask: [N]      True where y is available
   edge_index: [2, E] and edge_weight: [E] from weighted DEM graph
@@ -26,7 +26,7 @@ from tqdm import tqdm
 # -------------------------
 T_IN = 30  # window length: t-13..t
 
-GRAPH_FEAT_LABELS = Path("/xdisk/behrangi/omidzandi/GNNs/data/graphs/graph_with_features_labels.pkl")
+GRAPH_FEAT_LABELS = Path("/xdisk/behrangi/omidzandi/GNNs/data/graphs/graph_with_features_labels_IDW5.pkl")
 GRAPH_WEIGHTED     = Path("/xdisk/behrangi/omidzandi/GNNs/data/graphs/DEM_graph_weighted.pkl")
 
 
@@ -46,7 +46,7 @@ def _tag_range(start, end):
     return f"to_{end}"
 
 
-OUT_DIR = BASE_OUT_ROOT / f"pyg_sequences_tgcn_T{T_IN:03d}_{_tag_range(DATE_START, DATE_END)}"
+OUT_DIR = BASE_OUT_ROOT / f"pyg_sequences_tgcn_T{T_IN:03d}_{_tag_range(DATE_START, DATE_END)}_IDW_added"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 print(f"📁 Output directory: {OUT_DIR}")
@@ -157,7 +157,8 @@ print("📡 Building dynamic tensor X_all [T, N, 2] ...")
 # G_feat stores: G.nodes[node]["dynamic"] shape [T_total, 2]
 # We will slice using orig_indices to match filtered time axis.
 
-X_all = np.empty((T, N, 2), dtype=np.float32)
+n_features = G_feat.nodes[common_nodes[0]]["dynamic"].shape[1]
+X_all = np.empty((T, N, n_features), dtype=np.float32)
 
 for j, node in enumerate(tqdm(common_nodes, desc="Nodes")):
     dyn = G_feat.nodes[node]["dynamic"]  # [T_total, 2]

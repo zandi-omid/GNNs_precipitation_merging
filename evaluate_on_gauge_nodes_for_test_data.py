@@ -1,8 +1,10 @@
+#%%
 import xarray as xr
 import numpy as np
+import matplotlib.pyplot as plt
 
 # -----------------------
-# Load dataset (quantile NetCDF)
+# Load dataset
 # -----------------------
 nc = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/TGCN_T30_quantile_fixed_test2020_2024/pred_inputs_daily_maps.nc"
 ds = xr.open_dataset(nc)
@@ -13,7 +15,7 @@ m = ds["gauge_mask"].astype(bool)
 obs = ds["gauge"].where(m).values.ravel()
 
 # -----------------------
-# Metrics helpers
+# Helpers
 # -----------------------
 def _paired(a, b):
     a = np.asarray(a, dtype=float)
@@ -56,62 +58,64 @@ def kge(obs, sim):
     beta  = mu_s / mu_o
     return float(1.0 - np.sqrt((r - 1.0) ** 2 + (alpha - 1.0) ** 2 + (beta - 1.0) ** 2))
 
-def summarize(name, sim, obs=obs):
-    o, s = _paired(obs, sim)
-    print(f"\n{name}")
-    print(f"  N paired: {o.size}")
-    print(f"  RMSE   : {rmse(obs, sim):.6f}")
-    print(f"  CC     : {cc(obs, sim):.6f}")
-    print(f"  KGE    : {kge(obs, sim):.6f}")
-
-def summarize_log(name, sim, obs=obs):
-    # log1p in case you want “skill on wet days” de-emphasize extremes
-    o = np.log1p(np.clip(obs, 0, None))
-    s = np.log1p(np.clip(sim, 0, None))
-    o2, s2 = _paired(o, s)
-    print(f"\n{name}  [LOG1P]")
-    print(f"  N paired: {o2.size}")
-    print(f"  CC     : {cc(o, s):.6f}")
-    print(f"  KGE    : {kge(o, s):.6f}")
+def compute_metrics(name, sim):
+    return {
+        "Product": name,
+        "RMSE": rmse(obs, sim),
+        "CC": cc(obs, sim),
+        "KGE": kge(obs, sim),
+    }
 
 # -----------------------
-# Evaluate expected value
+# Pull products (linear space only)
 # -----------------------
 pred_ev = ds["pred_expected_mean"].where(m).values.ravel()
-summarize("PRED_EXPECTED_MEAN vs GAUGE", pred_ev)
-summarize_log("PRED_EXPECTED_MEAN vs GAUGE", pred_ev)
 
-# -----------------------
-# Evaluate 3 highest quantiles
-# -----------------------
-tau = ds["tau"].values.astype(float)  # e.g. [0.05 ... 0.95]
-top3 = tau[-3:]                       # last three: 0.75, 0.90, 0.95
-print("\nSelected top-3 taus:", top3)
+# Quantiles we want
+q75 = ds["pred_q"].sel(tau=0.75).where(m).values.ravel()
+q95 = ds["pred_q"].sel(tau=0.95).where(m).values.ravel()
 
-for tval in top3:
-    q = ds["pred_q"].sel(tau=float(tval)).where(m).values.ravel()
-    summarize(f"PRED_Q(tau={tval:g}) vs GAUGE", q)
-    summarize_log(f"PRED_Q(tau={tval:g}) vs GAUGE", q)
-
-# -----------------------
-# Baselines
-# -----------------------
 era5 = ds["era5"].where(m).values.ravel()
 im   = ds["imerg"].where(m).values.ravel()
 
-summarize("ERA5 vs GAUGE", era5)
-summarize_log("ERA5 vs GAUGE", era5)
-
-summarize("IMERG vs GAUGE", im)
-summarize_log("IMERG vs GAUGE", im)
-
 # -----------------------
-# Quantile Coverage Check
+# Compute metrics table (dict-of-dicts)
 # -----------------------
-print("\n--- Quantile Coverage ---")
+rows = []
+rows.append(compute_metrics("TGCN_expected_mean", pred_ev))
+rows.append(compute_metrics("TGCN_q75", q75))
+rows.append(compute_metrics("TGCN_q95", q95))
+rows.append(compute_metrics("ERA5", era5))
+rows.append(compute_metrics("IMERG", im))
 
-for tval in ds["tau"].values[-3:]:
-    q = ds["pred_q"].sel(tau=float(tval)).where(m).values.ravel()
-    o, qv = _paired(obs, q)
-    coverage = np.mean(o <= qv)
-    print(f"tau={tval:.2f}  empirical_coverage={coverage:.4f}")
+# Keep product order fixed for plots
+product_order = [r["Product"] for r in rows]
+
+metrics = ["RMSE", "CC", "KGE"]
+vals = {met: [r[met] for r in rows] for met in metrics}
+
+print("N paired (shared mask):", _paired(obs, era5)[0].size)
+for r in rows:
+    print(r)
+
+#%%
+# -----------------------
+# Plot: one barplot per metric
+# -----------------------
+for met in metrics:
+    y = np.array(vals[met], dtype=float)
+
+    plt.figure()
+    plt.bar(product_order, y)
+    plt.title(f"{met} vs GAUGE (linear space)")
+    plt.ylabel(met)
+    plt.xticks(rotation=30, ha="right")
+
+    # annotate values on bars
+    for i, v in enumerate(y):
+        if np.isfinite(v):
+            plt.text(i, v, f"{v:.3f}", ha="center", va="bottom", fontsize=9)
+
+    plt.tight_layout()
+    plt.show()
+# %%

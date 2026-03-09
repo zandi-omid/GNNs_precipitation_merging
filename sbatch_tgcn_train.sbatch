@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --account=xdong
 #SBATCH --partition=gpu_standard
-#SBATCH --nodes=5
+#SBATCH --nodes=2
 #SBATCH --gres=gpu:2
 #SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=2

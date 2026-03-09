@@ -3,10 +3,15 @@
 """
 Train TGCN (multi-feature) for retrospective precipitation estimation
 --------------------------------------------------------------------
-Input: 14-day window of (ERA5, IMERG) at every node -> estimate gauge precip at day t.
+Input: T-day window of selected features at every node -> estimate gauge precip at day t.
 
 Data: seq_*.pt files, each sample dict contains:
-  x: [T, N, 2], y: [N], y_mask: [N], edge_index: [2,E], edge_weight: [E], date: str
+  x: [T, N, F_all], y: [N], y_mask: [N], edge_index: [2,E], edge_weight: [E], date: str
+
+Feature convention in current dataset:
+  0 -> ERA5
+  1 -> IMERG
+  2 -> IDW5
 
 Splits (year-based):
   - Train: 2005–2018
@@ -91,6 +96,7 @@ class TGCNLightning(pl.LightningModule):
         edge_weight: Optional[torch.Tensor],
         num_nodes: int,
         in_channels: int = 2,
+        input_feature_indices: Optional[list[int]] = None,
         hidden_dim: int = 64,
         rnn_layers: int = 2,
         gcn_layers: int = 2,
@@ -120,6 +126,7 @@ class TGCNLightning(pl.LightningModule):
 
         self.loss_name = (loss_name or "mse").lower()
         self.n_quantiles = int(loss_n_quantiles)
+        self.input_feature_indices = input_feature_indices
 
         # decide output channels Q
         out_channels = self.n_quantiles if self.loss_name == "quantile" else 1
@@ -149,7 +156,6 @@ class TGCNLightning(pl.LightningModule):
         self.t_max = int(t_max)
         self.eta_min = float(eta_min)
 
-        # build loss
         if self.loss_name == "quantile":
             self.loss_fn = build_loss(
                 "quantile",
@@ -161,16 +167,18 @@ class TGCNLightning(pl.LightningModule):
         else:
             self.loss_fn = build_loss("mse")
 
-        # ---- debug helpers ----
         self.debug_every_n_steps = int(debug_every_n_steps)
         self._debug_prev_head = None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: [B, T, N, F_all]
+        if self.input_feature_indices is not None:
+            x = x[..., self.input_feature_indices]
+
         x = self._apply_x_transform(x)
         y_hat = self.model(x)  # [B,N,Q] or [B,N,1]
         return y_hat
 
-    # ---------------- Transforms ----------------
     def _apply_x_transform(self, x: torch.Tensor) -> torch.Tensor:
         if self.x_clip_min is not None:
             x = torch.clamp(x, min=float(self.x_clip_min))
@@ -193,7 +201,6 @@ class TGCNLightning(pl.LightningModule):
             raise ValueError(f"Unknown y_transform: {self.y_transform}")
         return y
 
-    # ---------------- Metrics ----------------
     @staticmethod
     def _masked_vectors(y_hat: torch.Tensor, y: torch.Tensor, y_mask: torch.Tensor):
         mask = y_mask & torch.isfinite(y)
@@ -229,9 +236,7 @@ class TGCNLightning(pl.LightningModule):
 
         return mse
 
-    # ---------------- Debug hook ----------------
     def on_after_backward(self):
-        # Lightning calls this after loss.backward()
         if (self.global_rank == 0) and (self.global_step % self.debug_every_n_steps == 0):
             head_w = self.model.head.weight
             g = head_w.grad
@@ -240,26 +245,18 @@ class TGCNLightning(pl.LightningModule):
             else:
                 print("[DEBUG] AFTER backward: head grad norm =", float(g.norm().item()))
 
-    # ---------------- Lightning steps ----------------
     def training_step(self, batch, batch_idx):
-        x = batch["x"]                       # [B,T,N,F]
+        x = batch["x"]                       # [B,T,N,F_all]
         y = batch["y"]                       # [B,N]
         y_mask = batch["y_mask"].bool()      # [B,N]
 
-        # Make mask consistent with finite labels
         y_mask = y_mask & torch.isfinite(y)
-
-        # Replace NaNs where mask is False (so math never sees NaN)
         y_safe = torch.where(y_mask, y, torch.zeros_like(y))
-
-        # Safe transform (currently "none" in your config)
         y_t = self._apply_y_transform(y_safe)
 
-        # Forward
-        y_hat = self(x)  # [B,N,Q] or [B,N,1]
+        y_hat = self(x)
         B = x.shape[0]
 
-        # ---- DEBUG prints (rank0 only) ----
         debug_every = getattr(self, "debug_every_n_steps", 0)
         do_dbg = (self.global_rank == 0) and (
             batch_idx == 0 or (debug_every and (self.global_step % debug_every == 0))
@@ -267,10 +264,12 @@ class TGCNLightning(pl.LightningModule):
 
         if do_dbg:
             with torch.no_grad():
+                x_used = x[..., self.input_feature_indices] if self.input_feature_indices is not None else x
                 print("\n[DEBUG] epoch", int(self.current_epoch),
                     "step", int(self.global_step),
                     "batch_idx", int(batch_idx))
-                print("x:", tuple(x.shape),
+                print("x(full):", tuple(x.shape),
+                    "x(used):", tuple(x_used.shape),
                     "y:", tuple(y.shape),
                     "y_mask:", tuple(y_mask.shape),
                     "y_hat:", tuple(y_hat.shape))
@@ -283,8 +282,6 @@ class TGCNLightning(pl.LightningModule):
                     yv = y_t[valid]
                     print("y(valid): min/mean/max =",
                         float(yv.min()), float(yv.mean()), float(yv.max()))
-
-                    # helpful: how many of the VALID targets are exactly 0?
                     frac_zero = float((yv == 0).float().mean().item())
                     print("y(valid) frac==0:", frac_zero)
                 else:
@@ -304,26 +301,21 @@ class TGCNLightning(pl.LightningModule):
                         print("pred qlast(valid): min/mean/max =",
                             float(qlast[valid].min()), float(qlast[valid].mean()), float(qlast[valid].max()))
 
-                        # Crossing check: count decreases between adjacent quantiles,
-                        # and require the node to be valid (same valid mask applies to all Q for that node).
-                        diffs = y_hat[:, :, 1:] - y_hat[:, :, :-1]   # [B,N,Q-1]
-                        crossings = (diffs < 0) & valid.unsqueeze(-1)  # [B,N,Q-1]
+                        diffs = y_hat[:, :, 1:] - y_hat[:, :, :-1]
+                        crossings = (diffs < 0) & valid.unsqueeze(-1)
                         denom = valid.sum().float() * float(Q - 1) + 1e-6
                         cross_frac = float(crossings.float().sum().item() / denom.item())
                         print("crossing fraction:", cross_frac)
 
-                        # Spread between lowest and highest quantile (should generally grow)
                         spread = (qlast - q0)
                         print("spread(valid): min/mean/max =",
                             float(spread[valid].min()), float(spread[valid].mean()), float(spread[valid].max()))
                 else:
-                    # MSE / Huber: y_hat expected [B,N,1]
                     y1 = y_hat.squeeze(-1)
                     if n_valid > 0:
                         print("pred(valid): min/mean/max =",
                             float(y1[valid].min()), float(y1[valid].mean()), float(y1[valid].max()))
 
-                # Head weight change check (safe if attribute not set)
                 head_w = self.model.head.weight
                 head_norm = float(head_w.data.norm().item())
                 prev = getattr(self, "_debug_prev_head", None)
@@ -336,28 +328,24 @@ class TGCNLightning(pl.LightningModule):
                     print("head weight norm:", head_norm, "delta since last dbg:", delta)
                     self._debug_prev_head = head_w.data.detach().clone()
 
-        # Loss + metrics channel selection
         if self.loss_name == "quantile":
-            # y_hat [B,N,Q], y_t [B,N], y_mask [B,N]
             loss = self.loss_fn(y_hat, y_t, y_mask)
             q_mid = y_hat.shape[-1] // 2
-            y_for_metrics = y_hat[:, :, q_mid]  # [B,N]
+            y_for_metrics = y_hat[:, :, q_mid]
         else:
-            y_hat_1 = y_hat.squeeze(-1)         # [B,N]
+            y_hat_1 = y_hat.squeeze(-1)
             loss = self.loss_fn(y_hat_1, y_t, y_mask)
             y_for_metrics = y_hat_1
 
-        # Extra debug scalar logs (cheap)
         with torch.no_grad():
             valid = y_mask & torch.isfinite(y_t)
             self.log("debug/n_valid", valid.sum().float(), on_step=True, on_epoch=False, sync_dist=True, batch_size=B)
             if self.loss_name == "quantile" and valid.sum() > 0:
-                y_ev = y_hat.mean(dim=-1)  # simple proxy for expected value
+                y_ev = y_hat.mean(dim=-1)
                 self.log("debug/pred_ev_mean", y_ev[valid].mean(), on_step=True, on_epoch=False, sync_dist=True, batch_size=B)
                 self.log("debug/pred_ev_std", y_ev[valid].std(), on_step=True, on_epoch=False, sync_dist=True, batch_size=B)
                 self.log("debug/y_mean", y_t[valid].mean(), on_step=True, on_epoch=False, sync_dist=True, batch_size=B)
 
-        # Epoch metrics (still based on one quantile for quantile case)
         self._log_epoch_metrics("train", y_for_metrics, y_t, y_mask, batch_size=B)
 
         self.log(
@@ -370,7 +358,6 @@ class TGCNLightning(pl.LightningModule):
             batch_size=B,
         )
 
-        # LR logging
         opt = self.optimizers()
         if opt is not None and len(opt.param_groups) > 0:
             self.log("lr", opt.param_groups[0]["lr"], on_step=True, on_epoch=False, prog_bar=False, sync_dist=True)
@@ -398,11 +385,13 @@ class TGCNLightning(pl.LightningModule):
             loss = self.loss_fn(y_hat_1, y_t, y_mask)
             y_for_metrics = y_hat_1
 
-        # One concise val debug line (rank0, first batch)
         if self.global_rank == 0 and batch_idx == 0:
             valid = y_mask & torch.isfinite(y_t)
+            x_used = x[..., self.input_feature_indices] if self.input_feature_indices is not None else x
             print(
-                "[VAL DEBUG] any NaN y_safe:", bool(torch.isnan(y_safe).any().item()),
+                "[VAL DEBUG] x(full):", tuple(x.shape),
+                "x(used):", tuple(x_used.shape),
+                "any NaN y_safe:", bool(torch.isnan(y_safe).any().item()),
                 "any NaN y_t:", bool(torch.isnan(y_t).any().item()),
                 "valid count:", int(valid.sum().item())
             )
@@ -449,7 +438,8 @@ def main():
 
     # Model
     parser.add_argument("--model_hidden_dim", type=int, default=64)
-    parser.add_argument("--model_in_channels", type=int, default=2)
+    parser.add_argument("--model_in_channels", type=int, default=2)  # ignored if feature selection or auto-detect is used
+    parser.add_argument("--model_input_feature_indices", type=int, nargs="+", default=None)
     parser.add_argument("--model_add_self_loops", action="store_true", default=True)
     parser.add_argument("--model_improved", action="store_true", default=False)
     parser.add_argument("--model_rnn_layers", type=int, default=1)
@@ -490,7 +480,6 @@ def main():
 
     args = parser.parse_args()
 
-    # Load TOML and override args
     if args.config is not None:
         cfg = flatten_config(load_toml_config(args.config))
         for k, v in cfg.items():
@@ -533,20 +522,41 @@ def main():
     )
     dm.setup()
 
-    # Get graph + shapes from first file
     first_file = sorted(Path(args.data_seq_dir).glob("seq_*.pt"))[0]
     sample = torch.load(first_file, map_location="cpu", weights_only=True)
-    _, N, _ = sample["x"].shape
+    _, N, F_all = sample["x"].shape
     edge_index = sample["edge_index"].long()
     edge_weight = sample.get("edge_weight", None)
     if edge_weight is not None:
         edge_weight = edge_weight.float()
 
+    feature_idx = getattr(args, "model_input_feature_indices", None)
+
+    if feature_idx is not None:
+        feature_idx = [int(i) for i in feature_idx]
+        bad = [i for i in feature_idx if i < 0 or i >= F_all]
+        if len(bad) > 0:
+            raise ValueError(f"Invalid feature indices {bad}; dataset has F_all={F_all}")
+        in_channels = len(feature_idx)
+    else:
+        in_channels = F_all
+
+    rank_zero_info(f"Detected total feature count from sample: F_all={F_all}")
+    rank_zero_info(f"Using input feature indices: {feature_idx if feature_idx is not None else 'ALL'}")
+    rank_zero_info(f"Model in_channels set to: {in_channels}")
+
+    if getattr(args, "model_in_channels", None) is not None and int(args.model_in_channels) != in_channels:
+        rank_zero_info(
+            f"⚠️ model_in_channels in config/args = {args.model_in_channels}, "
+            f"but effective in_channels = {in_channels}. Using {in_channels}."
+        )
+
     model = TGCNLightning(
         edge_index=edge_index,
         edge_weight=edge_weight,
         num_nodes=N,
-        in_channels=args.model_in_channels,
+        in_channels=in_channels,
+        input_feature_indices=feature_idx,
         hidden_dim=args.model_hidden_dim,
         rnn_layers=args.model_rnn_layers,
         gcn_layers=args.model_gcn_layers,

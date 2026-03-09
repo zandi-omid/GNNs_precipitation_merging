@@ -483,6 +483,12 @@ def main():
         num_nodes=N,
     )
 
+    print(
+    f"[Rank {rank}] Loaded checkpoint. "
+    f"input_feature_indices={getattr(model, 'input_feature_indices', None)} "
+    f"in_channels={model.model.backbone.in_channels}",
+    flush=True,)
+
     # 5) run inference
     out = run_inference(
         model=model,
@@ -492,7 +498,7 @@ def main():
         clamp_min=clamp_min,
         amp=amp,
         tau_sel=tau_sel,
-        save_full_quantiles=save_full_q,
+        save_full_quantiles=save_full_quantiles,
         compute_expected=compute_expected,
         enforce_monotonic=enforce_monotonic,
     )

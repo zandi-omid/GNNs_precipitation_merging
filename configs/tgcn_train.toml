@@ -1,8 +1,8 @@
 [meta]
-run_name = "TGCN_T30_quantiles_train2005_2018_val2019_fixed"
+run_name = "TGCN_T30_quantiles_train2005_2018_val2019_fixed_IDW_added"
 
 [data]
-seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years"
+seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years_IDW_added"
 batch_size = 8
 num_workers = 4
 train_years = [2005, 2018]
@@ -10,13 +10,13 @@ val_years   = [2019, 2019]
 test_years  = [2020, 2024]
 
 [loss]
-name = "quantile"           # mse / huber / quantile
+name = "mse"           # mse / huber / quantile
 n_quantiles = 32
 crossing_weight = 0.0
 delta = 1.0
 
 [model]
-in_channels = 2
+input_feature_indices = [0, 1, 2] # ERA5 + IMERG + IDW
 hidden_dim = 128
 add_self_loops = true
 improved = false
@@ -43,6 +43,6 @@ max_epochs = 100
 precision = "16-mixed"
 log_every_n_steps = 20
 devices = 2
-num_nodes = 5
+num_nodes = 2
 accelerator = "gpu"
 strategy = "ddp"
