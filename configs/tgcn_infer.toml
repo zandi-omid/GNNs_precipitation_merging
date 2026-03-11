@@ -1,10 +1,10 @@
 [meta]
-run_name = "TGCN_T30_MSE_IDW_test2020_2024"
+run_name = "TGCN_T30_MSE_avg10_test2020_2024"
 
 [data]
-seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years_IDW_added"
-ckpt    = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/checkpoints/TGCN_T30_quantiles_train2005_2018_val2019_fixed_IDW_added/last.ckpt"
-out_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/TGCN_T30_IDW_added_test2020_2024"
+seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years_avg10"
+ckpt = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/checkpoints/TGCN_T30_quantiles_train2005_2018_val2019_fixed_avg10/last.ckpt"
+out_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/TGCN_T30_avg10_test2020_2024"
 test_years = [2020, 2024]
 
 [compute]
@@ -21,3 +21,13 @@ tau_sel = [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95]
 save_full_quantiles = true
 compute_expected = true
 enforce_monotonic = true
+
+[postprocess]
+enabled = true
+graph_pkl = "/xdisk/behrangi/omidzandi/GNNs/data/graphs/graph_with_features_labels_avg10"
+out_nc = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/TGCN_T30_avg10_test2020_2024/pred_inputs_daily_maps.nc"
+save_det = true
+save_quantiles = false
+no_expected_mean = false
+no_median = false
+merged_name = "preds_merged.npz"

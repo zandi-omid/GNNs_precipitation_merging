@@ -26,9 +26,9 @@ from tqdm import tqdm
 # -------------------------
 T_IN = 30  # window length: t-13..t
 
-GRAPH_FEAT_LABELS = Path("/xdisk/behrangi/omidzandi/GNNs/data/graphs/graph_with_features_labels_IDW5.pkl")
+# GRAPH_FEAT_LABELS = Path("/xdisk/behrangi/omidzandi/GNNs/data/graphs/graph_with_features_labels_IDW5.pkl")
+GRAPH_FEAT_LABELS = Path("/xdisk/behrangi/omidzandi/GNNs/data/graphs/graph_with_features_labels_avg10.pkl")
 GRAPH_WEIGHTED     = Path("/xdisk/behrangi/omidzandi/GNNs/data/graphs/DEM_graph_weighted.pkl")
-
 
 BASE_OUT_ROOT = Path("/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data")
 
@@ -46,7 +46,7 @@ def _tag_range(start, end):
     return f"to_{end}"
 
 
-OUT_DIR = BASE_OUT_ROOT / f"pyg_sequences_tgcn_T{T_IN:03d}_{_tag_range(DATE_START, DATE_END)}_IDW_added"
+OUT_DIR = BASE_OUT_ROOT / f"pyg_sequences_tgcn_T{T_IN:03d}_{_tag_range(DATE_START, DATE_END)}_avg10"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 print(f"📁 Output directory: {OUT_DIR}")

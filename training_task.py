@@ -348,19 +348,49 @@ class TGCNLightning(pl.LightningModule):
 
         self._log_epoch_metrics("train", y_for_metrics, y_t, y_mask, batch_size=B)
 
+        # batch-level loss if you still want to monitor optimization progress
         self.log(
             "train/loss_step",
             loss,
-            prog_bar=True,
+            prog_bar=False,
             on_step=True,
             on_epoch=False,
             sync_dist=True,
             batch_size=B,
         )
 
+        # epoch-level training loss
+        self.log(
+            "train/loss",
+            loss,
+            prog_bar=True,
+            on_step=False,
+            on_epoch=True,
+            sync_dist=True,
+            batch_size=B,
+        )
+
         opt = self.optimizers()
         if opt is not None and len(opt.param_groups) > 0:
-            self.log("lr", opt.param_groups[0]["lr"], on_step=True, on_epoch=False, prog_bar=False, sync_dist=True)
+            # batch-level LR
+            self.log(
+                "lr_step",
+                opt.param_groups[0]["lr"],
+                on_step=True,
+                on_epoch=False,
+                prog_bar=False,
+                sync_dist=True,
+            )
+
+            # epoch-level LR
+            self.log(
+                "lr_epoch",
+                opt.param_groups[0]["lr"],
+                on_step=False,
+                on_epoch=True,
+                prog_bar=False,
+                sync_dist=True,
+            )
 
         return loss
 
@@ -398,6 +428,8 @@ class TGCNLightning(pl.LightningModule):
 
         self.log("val/loss", loss, on_step=False, on_epoch=True, sync_dist=True, batch_size=B)
         self._log_epoch_metrics("val", y_for_metrics, y_t, y_mask, batch_size=B)
+
+        return loss
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)

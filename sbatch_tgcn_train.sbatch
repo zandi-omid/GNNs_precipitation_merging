@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --account=xdong
 #SBATCH --partition=gpu_standard
-#SBATCH --nodes=2
+#SBATCH --nodes=5
 #SBATCH --gres=gpu:2
 #SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=2
@@ -41,6 +41,7 @@ echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
 # -------- Training --------
 srun /home/u20/omidzandi/micromamba/envs/pyG/bin/python \
      /xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/training_task.py \
-     --config /xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/configs/tgcn_train.toml
+     --config /xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/configs/tgcn_train.toml \
+     --trainer_num_nodes "$SLURM_NNODES"
 
 echo "=========== JOB ENDED: $(date) ==========="

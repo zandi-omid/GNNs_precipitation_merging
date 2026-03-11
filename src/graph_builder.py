@@ -46,11 +46,11 @@ ERA5_PATH = "/xdisk/behrangi/omidzandi/GNNs/data/ERA5_daily/ERA5_DAILY_2005_2024
 IMERG_PATH = "/xdisk/behrangi/omidzandi/GNNs/data/IMERG_daily/IMERG_DAILY_2005_2024_MERGED.nc"
 GAUGE_PATH = "/xdisk/behrangi/omidzandi/GNNs/data/ghcn_data/ghcn_precip_2005_2024_AZ_buffer_50pct.csv"
 
-GRAPH_OUT = Path("/xdisk/behrangi/omidzandi/GNNs/data/graphs/graph_with_features_labels_IDW5.pkl")
+GRAPH_OUT = Path("/xdisk/behrangi/omidzandi/GNNs/data/graphs/graph_with_features_labels_avg10.pkl")
 xmin, ymin, xmax, ymax = -115.25, 29.85, -106.45, 38.25
 
-IDW_K = 5
-IDW_POWER = 2.0
+IDW_K = 10
+IDW_POWER = 0
 
 
 
