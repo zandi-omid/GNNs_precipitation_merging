@@ -1,8 +1,9 @@
 [meta]
-run_name = "TGCN_T30_quantiles_train2005_2018_val2019_fixed_avg10"
+run_name = "TGCN_T30_train2005_2018_val2019_gauge_density_pt50"
 
 [data]
-seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years_avg10"
+#seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years_avg10"
+seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years_050pct"
 batch_size = 8
 num_workers = 4
 train_years = [2005, 2018]
@@ -29,7 +30,7 @@ weight_decay = 0.0
 
 [scheduler]
 name = "CosineAnnealingLR"  # none / CosineAnnealingLR
-t_max = 100
+t_max = 50
 eta_min = 0.0
 
 [transform]
@@ -39,7 +40,7 @@ x_clip_min = 0.0
 y_clip_min = 0.0
 
 [trainer]
-max_epochs = 100
+max_epochs = 50
 precision = "16-mixed"
 log_every_n_steps = 20
 devices = 2

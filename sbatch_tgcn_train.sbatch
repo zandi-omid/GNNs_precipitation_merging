@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --account=xdong
+#SBATCH --account=behrangi
 #SBATCH --partition=gpu_standard
 #SBATCH --nodes=5
 #SBATCH --gres=gpu:2
 #SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=2
 #SBATCH --mem-per-cpu=8G
-#SBATCH --time=12:00:00
-#SBATCH --job-name=tgcn
+#SBATCH --time=8:00:00
+#SBATCH --job-name=tgcn_diff
 #SBATCH --output=logs/tgcn_%j.out
 #SBATCH --error=logs/tgcn_%j.err
 
@@ -36,7 +36,6 @@ echo "SLURM_NTASKS=$SLURM_NTASKS"
 echo "SLURM_NNODES=$SLURM_NNODES"
 echo "SLURM_NODELIST=$SLURM_NODELIST"
 echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
-
 
 # -------- Training --------
 srun /home/u20/omidzandi/micromamba/envs/pyG/bin/python \

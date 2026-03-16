@@ -20,21 +20,17 @@ import numpy as np
 import torch
 from pathlib import Path
 from tqdm import tqdm
+import argparse
 
 # -------------------------
 # CONFIG
 # -------------------------
-T_IN = 30  # window length: t-13..t
+T_IN_DEFAULT = 30  # window length: t-29..t
 
-# GRAPH_FEAT_LABELS = Path("/xdisk/behrangi/omidzandi/GNNs/data/graphs/graph_with_features_labels_IDW5.pkl")
-GRAPH_FEAT_LABELS = Path("/xdisk/behrangi/omidzandi/GNNs/data/graphs/graph_with_features_labels_avg10.pkl")
-GRAPH_WEIGHTED     = Path("/xdisk/behrangi/omidzandi/GNNs/data/graphs/DEM_graph_weighted.pkl")
-
-BASE_OUT_ROOT = Path("/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data")
-
-# Optional: restrict time range (leave as None to use all)
-DATE_START = None  # "2008-01-01"
-DATE_END   = None  # "2012-12-31"
+GRAPH_WEIGHTED_DEFAULT = Path("/xdisk/behrangi/omidzandi/GNNs/data/graphs/DEM_graph_weighted.pkl")
+BASE_OUT_ROOT_DEFAULT = Path("/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data")
+DATE_START_DEFAULT = None
+DATE_END_DEFAULT = None
 
 def _tag_range(start, end):
     if (start is None) and (end is None):
@@ -45,15 +41,61 @@ def _tag_range(start, end):
         return f"from_{start}"
     return f"to_{end}"
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Build TGCN-ready sequence dataset from a graph_with_features_labels pickle."
+    )
 
-OUT_DIR = BASE_OUT_ROOT / f"pyg_sequences_tgcn_T{T_IN:03d}_{_tag_range(DATE_START, DATE_END)}_avg10"
-OUT_DIR.mkdir(parents=True, exist_ok=True)
+    parser.add_argument(
+        "--graph-feat-labels",
+        type=str,
+        required=True,
+        help="Path to graph_with_features_labels_*.pkl"
+    )
 
-print(f"📁 Output directory: {OUT_DIR}")
+    parser.add_argument(
+        "--graph-weighted",
+        type=str,
+        default=str(GRAPH_WEIGHTED_DEFAULT),
+        help="Path to weighted DEM graph pickle"
+    )
 
-# Optional: restrict time range (leave as None to use all)
-DATE_START = None  # "2008-01-01"
-DATE_END   = None  # "2012-12-31"
+    parser.add_argument(
+        "--scenario-tag",
+        type=str,
+        required=True,
+        help="Scenario tag used in output folder name, e.g. 025pct"
+    )
+
+    parser.add_argument(
+        "--t-in",
+        type=int,
+        default=T_IN_DEFAULT,
+        help="Input sequence length"
+    )
+
+    parser.add_argument(
+        "--base-out-root",
+        type=str,
+        default=str(BASE_OUT_ROOT_DEFAULT),
+        help="Base directory for output sequence folders"
+    )
+
+    parser.add_argument(
+        "--date-start",
+        type=str,
+        default=DATE_START_DEFAULT,
+        help="Optional start date, e.g. 2008-01-01"
+    )
+
+    parser.add_argument(
+        "--date-end",
+        type=str,
+        default=DATE_END_DEFAULT,
+        help="Optional end date, e.g. 2012-12-31"
+    )
+
+    return parser.parse_args()
 
 # -------------------------
 # Helpers
@@ -98,6 +140,21 @@ def parse_time_axis(time_axis, start=None, end=None):
     return dates.tolist(), idx.tolist()
 
 
+args = parse_args()
+
+T_IN = args.t_in
+GRAPH_FEAT_LABELS = Path(args.graph_feat_labels)
+GRAPH_WEIGHTED = Path(args.graph_weighted)
+BASE_OUT_ROOT = Path(args.base_out_root)
+DATE_START = args.date_start
+DATE_END = args.date_end
+SCENARIO_TAG = args.scenario_tag
+
+OUT_DIR = BASE_OUT_ROOT / f"pyg_sequences_tgcn_T{T_IN:03d}_{_tag_range(DATE_START, DATE_END)}_{SCENARIO_TAG}"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+print(f"📁 Output directory: {OUT_DIR}")
+
 # -------------------------
 # 1) Load graphs
 # -------------------------
@@ -123,6 +180,10 @@ print(f"✅ G_w nodes={len(G_w.nodes())}, edges={len(G_w.edges())}")
 nodes_feat = set(G_feat.nodes())
 nodes_w    = set(G_w.nodes())
 common_nodes = sorted(nodes_feat.intersection(nodes_w))
+
+print(f"Feature graph nodes: {len(nodes_feat)}")
+print(f"Weighted graph nodes: {len(nodes_w)}")
+print(f"Common nodes: {len(common_nodes)}")
 
 if len(common_nodes) == 0:
     raise RuntimeError("No overlapping nodes between weighted graph and feature/label graph.")
@@ -153,8 +214,8 @@ if T < T_IN:
 # -------------------------
 # 5) Stack dynamic features into array [T, N, F]
 # -------------------------
-print("📡 Building dynamic tensor X_all [T, N, 2] ...")
-# G_feat stores: G.nodes[node]["dynamic"] shape [T_total, 2]
+print("📡 Building dynamic tensor X_all [T, N, F] ...")
+# G_feat stores: G.nodes[node]["dynamic"] shape [T_total, F]
 # We will slice using orig_indices to match filtered time axis.
 
 n_features = G_feat.nodes[common_nodes[0]]["dynamic"].shape[1]
@@ -192,7 +253,7 @@ sample_count = 0
 for t in tqdm(range(T_IN - 1, T), desc="Saving seq_*.pt"):
     # window indices inclusive: t-T_IN+1 .. t
     t0 = t - (T_IN - 1)
-    x_seq = X_all[t0 : t + 1, :, :]            # [T_IN, N, 2]
+    x_seq = X_all[t0 : t + 1, :, :]            # [T_IN, N, F]
     y_t   = Y_all[t, :]                        # [N]
     y_m   = ~np.isnan(y_t)                     # [N] bool
 
@@ -213,4 +274,4 @@ for t in tqdm(range(T_IN - 1, T), desc="Saving seq_*.pt"):
     sample_count += 1
 
 print(f"✅ Done. Saved {sample_count} sequence samples (T_IN={T_IN}).")
-print("📌 Each sample: x=[T_in, N, 2], y=[N], y_mask=[N], edge_index, edge_weight")
+print("📌 Each sample: x=[T_in, N, F], y=[N], y_mask=[N], edge_index, edge_weight")

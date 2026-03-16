@@ -470,7 +470,7 @@ def main():
 
     # Model
     parser.add_argument("--model_hidden_dim", type=int, default=64)
-    parser.add_argument("--model_in_channels", type=int, default=2)  # ignored if feature selection or auto-detect is used
+    parser.add_argument("--model_in_channels", type=int, default=3)  # ignored if feature selection or auto-detect is used
     parser.add_argument("--model_input_feature_indices", type=int, nargs="+", default=None)
     parser.add_argument("--model_add_self_loops", action="store_true", default=True)
     parser.add_argument("--model_improved", action="store_true", default=False)

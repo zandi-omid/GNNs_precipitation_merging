@@ -6,7 +6,7 @@
 #SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=4
 #SBATCH --mem-per-cpu=8G
-#SBATCH --time=4:00:00
+#SBATCH --time=1:00:00
 #SBATCH --job-name=infr_avg10
 #SBATCH --output=logs/tgcn_infer_%j.out
 #SBATCH --error=logs/tgcn_infer_%j.err
