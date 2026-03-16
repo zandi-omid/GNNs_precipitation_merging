@@ -80,13 +80,13 @@ nc_idw  = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/
 nc_prism = "/xdisk/behrangi/omidzandi/GNNs/data/PRISM_daily_5km/PRISM_on_ERA5_DAILY_2005_2024.nc"
 
 # mean_thresh = 5
-mean_thresh = 0.1
 # mean_thresh = 0.1
+mean_thresh = 0.1
 
 
 # seed = 520
-seed = 10
-# seed = 50
+# seed = 10
+seed = 50
 
 use_gaussian = True
 gaussian_sigma = 1.2
@@ -214,7 +214,7 @@ vmax = np.floor(vmax_raw / 5) * 5
 print(f"Raw vmax={vmax_raw:.2f} -> Rounded vmax={vmax:.0f}")
 
 # discretization step
-step = 0.5
+step = 1
 levels = np.arange(vmin, vmax + step, step)
 
 from matplotlib.colors import BoundaryNorm

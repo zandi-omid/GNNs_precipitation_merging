@@ -1,3 +1,4 @@
+#%%
 #!/usr/bin/env python3
 # coding: utf-8
 
@@ -255,3 +256,4 @@ print(f"CC               : {cc(obs, sim):.4f}")
 print(f"KGE              : {kge(obs, sim):.4f}")
 print(f"Bias             : {bias(obs, sim):.4f}")
 print(f"Saved CSV        : {out_path}")
+# %%

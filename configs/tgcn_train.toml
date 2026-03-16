@@ -1,9 +1,9 @@
 [meta]
-run_name = "TGCN_T30_train2005_2018_val2019_gauge_density_pt50"
+run_name = "TGCN_T30_train2005_2018_val2019_gauge_density_pt75"
 
 [data]
 #seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years_avg10"
-seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years_050pct"
+seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years_075pct"
 batch_size = 8
 num_workers = 4
 train_years = [2005, 2018]
