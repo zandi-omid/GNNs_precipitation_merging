@@ -44,7 +44,7 @@ from models.gcn_multifeat import GCNRegressor
 from losses import build_loss
 
 
-RUN_NAME = "TGCN_T14_train2005_2018_val2019"
+RUN_NAME = None
 BASE_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval"
 
 
@@ -514,7 +514,7 @@ class TGCNLightning(pl.LightningModule):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default=None, help="Path to TOML config")
-    parser.add_argument("--run_name", type=str, default=RUN_NAME)
+    parser.add_argument("--run_name", type=str, default=None)
 
     # Data
     parser.add_argument("--data_seq_dir", type=str, required=False)
@@ -592,12 +592,10 @@ def main():
 
     base_dir = Path(BASE_DIR)
 
-    run_name = (
-        getattr(args, "run_name", None)
-        or getattr(args, "meta_run_name", None)
-        or getattr(args, "meta__run_name", None)
-        or RUN_NAME
-    )
+    run_name = getattr(args, "run_name", None)
+
+    if not run_name:
+        raise ValueError("Please define run_name in the config file under [meta].")
 
     ckpt_root = base_dir / "checkpoints" / run_name
     log_root = base_dir / "logs"
