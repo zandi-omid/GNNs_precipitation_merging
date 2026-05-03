@@ -1,10 +1,11 @@
 [meta]
-run_name = "TGCN_T30_train2005_2018_val2019_gauge_density_pt75"
+run_name = "GCN_train2005_2018_val2019_gauge_density_pt100"
 
 [data]
-#seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years_avg10"
-seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years_075pct"
-batch_size = 8
+seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years_avg10"
+#seq_dir = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years_075pct"
+#batch_size = 8 #TGCN
+batch_size = 64
 num_workers = 4
 train_years = [2005, 2018]
 val_years   = [2019, 2019]
@@ -17,6 +18,7 @@ crossing_weight = 0.0
 delta = 1.0
 
 [model]
+model_type = "gcn" # We can choose between gcn and tgcn models
 input_feature_indices = [0, 1, 2] # ERA5 + IMERG + IDW
 hidden_dim = 128
 add_self_loops = true
@@ -30,7 +32,7 @@ weight_decay = 0.0
 
 [scheduler]
 name = "CosineAnnealingLR"  # none / CosineAnnealingLR
-t_max = 50
+t_max = 100
 eta_min = 0.0
 
 [transform]
@@ -40,7 +42,7 @@ x_clip_min = 0.0
 y_clip_min = 0.0
 
 [trainer]
-max_epochs = 50
+max_epochs = 100
 precision = "16-mixed"
 log_every_n_steps = 20
 devices = 2

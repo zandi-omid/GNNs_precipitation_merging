@@ -40,6 +40,7 @@ import tomli as tomllib
 
 from utils.data.seq_datamodule import SpatioTemporalPTDataModule
 from models.tgcn_multifeat import TGCNRegressor
+from models.gcn_multifeat import GCNRegressor
 from losses import build_loss
 
 
@@ -104,6 +105,7 @@ class TGCNLightning(pl.LightningModule):
         weight_decay: float = 0.0,
         add_self_loops: bool = True,
         improved: bool = False,
+        model_type: str = "tgcn",
         # ---- transforms / clipping ----
         x_transform: str = "none",     # "none" | "log1p"
         y_transform: str = "none",     # "none" | "log1p"
@@ -127,22 +129,38 @@ class TGCNLightning(pl.LightningModule):
         self.loss_name = (loss_name or "mse").lower()
         self.n_quantiles = int(loss_n_quantiles)
         self.input_feature_indices = input_feature_indices
+        self.model_type = (model_type or "tgcn").lower()
 
         # decide output channels Q
         out_channels = self.n_quantiles if self.loss_name == "quantile" else 1
 
-        self.model = TGCNRegressor(
-            edge_index=edge_index,
-            edge_weight=edge_weight,
-            num_nodes=num_nodes,
-            in_channels=in_channels,
-            hidden_dim=hidden_dim,
-            rnn_layers=rnn_layers,
-            gcn_layers=gcn_layers,
-            add_self_loops=add_self_loops,
-            improved=improved,
-            out_channels=out_channels,
-        )
+        if self.model_type == "tgcn":
+            self.model = TGCNRegressor(
+                edge_index=edge_index,
+                edge_weight=edge_weight,
+                num_nodes=num_nodes,
+                in_channels=in_channels,
+                hidden_dim=hidden_dim,
+                rnn_layers=rnn_layers,
+                gcn_layers=gcn_layers,
+                add_self_loops=add_self_loops,
+                improved=improved,
+                out_channels=out_channels,
+            )
+        elif self.model_type == "gcn":
+            self.model = GCNRegressor(
+                edge_index=edge_index,
+                edge_weight=edge_weight,
+                num_nodes=num_nodes,
+                in_channels=in_channels,
+                hidden_dim=hidden_dim,
+                gcn_layers=gcn_layers,
+                add_self_loops=add_self_loops,
+                improved=improved,
+                out_channels=out_channels,
+            )
+        else:
+            raise ValueError(f"Unknown model_type: {self.model_type}. Choose from ['tgcn', 'gcn'].")
 
         self.lr = float(lr)
         self.weight_decay = float(weight_decay)
@@ -208,31 +226,69 @@ class TGCNLightning(pl.LightningModule):
             return None, None
         return y_hat[mask].float(), y[mask].float()
 
-    def _mse_rmse_bias_cc(self, y_hat: torch.Tensor, y: torch.Tensor, y_mask: torch.Tensor):
+    def _mse_rmse_bias_cc_kge(self, y_hat: torch.Tensor, y: torch.Tensor, y_mask: torch.Tensor):
+
         pred, obs = self._masked_vectors(y_hat, y, y_mask)
+
         if pred is None:
+
             z = torch.tensor(0.0, device=self.device)
-            return z, z, z, z
+
+            return z, z, z, z, z
 
         diff = pred - obs
+
         mse = torch.mean(diff ** 2)
+
         rmse = torch.sqrt(mse)
+
         bias = torch.mean(diff)
 
         pred_c = pred - pred.mean()
+
         obs_c = obs - obs.mean()
-        denom = torch.sqrt(torch.sum(pred_c**2) * torch.sum(obs_c**2))
+
+        denom = torch.sqrt(torch.sum(pred_c ** 2) * torch.sum(obs_c ** 2))
+
         cc = torch.sum(pred_c * obs_c) / (denom + 1e-12)
 
-        return mse, rmse, bias, cc
+        mu_p = torch.mean(pred)
+
+        mu_o = torch.mean(obs)
+
+        std_p = torch.std(pred, unbiased=False)
+
+        std_o = torch.std(obs, unbiased=False)
+
+        alpha = std_p / (std_o + 1e-12)
+
+        beta = mu_p / (mu_o + 1e-12)
+
+        kge = 1.0 - torch.sqrt(
+
+            (cc - 1.0) ** 2 +
+
+            (alpha - 1.0) ** 2 +
+
+            (beta - 1.0) ** 2
+
+        )
+
+        return mse, rmse, bias, cc, kge
 
     def _log_epoch_metrics(self, stage: str, y_hat: torch.Tensor, y: torch.Tensor, y_mask: torch.Tensor, batch_size: int):
-        mse, rmse, bias, cc = self._mse_rmse_bias_cc(y_hat, y, y_mask)
+
+        mse, rmse, bias, cc, kge = self._mse_rmse_bias_cc_kge(y_hat, y, y_mask)
 
         self.log(f"{stage}/mse", mse, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+
         self.log(f"{stage}/rmse", rmse, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+
         self.log(f"{stage}/bias", bias, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+
         self.log(f"{stage}/cc", cc, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+
+        self.log(f"{stage}/kge", kge, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
 
         return mse
 
@@ -510,6 +566,9 @@ def main():
     # Debug
     parser.add_argument("--debug_every_n_steps", type=int, default=200)
 
+    # Algorithm
+    parser.add_argument("--model_model_type", type=str, default="tgcn", choices=["tgcn", "gcn"])
+
     args = parser.parse_args()
 
     if args.config is not None:
@@ -596,6 +655,7 @@ def main():
         weight_decay=args.optim_weight_decay,
         add_self_loops=args.model_add_self_loops,
         improved=args.model_improved,
+        model_type=args.model_model_type,
         scheduler=args.scheduler_scheduler,
         t_max=args.scheduler_t_max,
         eta_min=args.scheduler_eta_min,

@@ -8,10 +8,10 @@ from tensorboard.backend.event_processing import event_accumulator
 # RUN_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/logs/TGCN_T14_70train_30test/version_8"
 # RUN_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/logs/TGCN_T30_linearMSE_train2005_2018_val2019/version_1"
 # RUN_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/logs/TGCN_T30_quantiles_train2005_2018_val2019/version_8"
-RUN_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/logs/TGCN_T30_quantiles_train2005_2018_val2019_fixed_avg10/version_0"
+# RUN_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/logs/TGCN_T30_quantiles_train2005_2018_val2019_fixed_avg10/version_0"
 # RUN_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/logs/TGCN_T30_quantiles_train2005_2018_val2019_fixed/version_1"
 # RUN_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/logs/TGCN_T30_quantiles_train2005_2018_val2019_fixed_avg10/version_0"
-# RUN_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/logs/TGCN_T30_train2005_2018_val2019_gauge_density_pt50/version_0"
+RUN_DIR = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/logs/TGCN_T30_train2005_2018_val2019_gauge_density_pt75/version_0"
 
 
 OUT_DIR = os.path.join(RUN_DIR, "scalar_plots")

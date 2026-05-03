@@ -19,11 +19,20 @@ import xarray as xr
 # ============================================================
 # CONFIG
 # ============================================================
-NC_TGCN = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/TGCN_T30_avg10_test2020_2024/pred_inputs_daily_maps.nc"
-NC_IDW  = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/IDW_test2020_2024/pred_inputs_daily_maps_IDW.nc"
+# NC_TGCN = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/TGCN_T30_avg10_test2020_2024/pred_inputs_daily_maps.nc"
+# NC_IDW  = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/IDW_test2020_2024/pred_inputs_daily_maps_IDW.nc"
+# NC_PRISM = "/xdisk/behrangi/omidzandi/GNNs/data/PRISM_daily_5km/PRISM_on_ERA5_DAILY_2005_2024.nc"
+
+# OUT_CSV = "/xdisk/behrangi/omidzandi/GNNs/evaluation/master_test_gauge_comparison_100pct.csv"
+
+NC_TGCN = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/TGCN_T30_075pct_test2020_2024/pred_inputs_daily_maps.nc"
+NC_IDW  = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/IDW_075pct_test2020_2024/pred_inputs_daily_maps_IDW.nc"
 NC_PRISM = "/xdisk/behrangi/omidzandi/GNNs/data/PRISM_daily_5km/PRISM_on_ERA5_DAILY_2005_2024.nc"
 
-OUT_CSV = "/xdisk/behrangi/omidzandi/GNNs/evaluation/master_test_gauge_comparison.csv"
+OUT_CSV = "/xdisk/behrangi/omidzandi/GNNs/evaluation/master_test_gauge_comparison_075pct.csv"
+
+# scenario = "100pct"
+scenario = "075pct"
 
 # Choose which TGCN field to export
 TGCN_VAR = "pred_det"   # or "pred_expected_mean" / "pred_median"
@@ -183,6 +192,9 @@ print(df[[
 # ============================================================
 out_path = Path(OUT_CSV)
 out_path.parent.mkdir(parents=True, exist_ok=True)
+
+df["scenario"] = scenario
+
 df.to_csv(out_path, index=False)
 
 print(f"\nSaved master CSV to:\n{out_path}")

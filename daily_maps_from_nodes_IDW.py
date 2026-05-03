@@ -18,9 +18,14 @@ from tqdm import tqdm
 # ============================================================
 # CONFIG
 # ============================================================
-GRAPH_PKL = "/xdisk/behrangi/omidzandi/GNNs/data/graphs/graph_with_features_labels_avg10.pkl"
-SEQ_DIR   = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years_avg10"
-OUT_NC    = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/IDW_test2020_2024/pred_inputs_daily_maps_IDW.nc"
+# Full 100pct
+# GRAPH_PKL = "/xdisk/behrangi/omidzandi/GNNs/data/graphs/graph_with_features_labels_avg10.pkl"
+# SEQ_DIR   = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years_avg10"
+# OUT_NC    = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/IDW_test2020_2024/pred_inputs_daily_maps_IDW.nc"
+
+GRAPH_PKL = "/xdisk/behrangi/omidzandi/GNNs/data/graphs/diff_gauge_density/graph_with_features_labels_025pct.pkl"
+SEQ_DIR   = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/data/pyg_sequences_tgcn_T030_all_years_025pct"
+OUT_NC    = "/xdisk/behrangi/omidzandi/GNNs/gnn_precipitation_retrieval/inference/IDW_025pct_test2020_2024/pred_inputs_daily_maps_IDW.nc"
 
 TEST_START = "2020-01-01"
 TEST_END   = "2024-12-31"

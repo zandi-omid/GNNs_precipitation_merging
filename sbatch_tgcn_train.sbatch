@@ -6,10 +6,10 @@
 #SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=2
 #SBATCH --mem-per-cpu=8G
-#SBATCH --time=8:00:00
-#SBATCH --job-name=tgcn_diff
-#SBATCH --output=logs/tgcn_%j.out
-#SBATCH --error=logs/tgcn_%j.err
+#SBATCH --time=4:00:00
+#SBATCH --job-name=gcn
+#SBATCH --output=logs/gcn_%j.out
+#SBATCH --error=logs/gcn_%j.err
 
 set -euo pipefail
 
