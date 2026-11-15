@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the associated paper and this repository."
+title: "Graph neural networks for precipitation merging and interpolation"
+type: software
+authors:
+  - family-names: "Zandi"
+    given-names: "Omid"
+repository-code: "https://github.com/zandi-omid/GNNs_precipitation_merging"
+version: "0.1.0"
+date-released: "2026-11-14"

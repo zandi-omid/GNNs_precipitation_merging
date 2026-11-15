@@ -1,0 +1,96 @@
+[meta]
+run_name = "ALLGAUGE_crossfit10_GATGCN_encodedLateFusion_distAttnPerNode_T14_Q32_train2005_2019"
+
+[training_task]
+mode = "global"
+date = ""
+
+[data]
+seq_dir = "./GSI/data/pyg_sequences_tgsi_T030_2005-01-01_to_2024-12-31_gauge2meshA1_100km_A2knn8_all_gauges_crossfit10_seed42"
+graph_path = "./data/graphs/gsi_a1_r100_a2_knn8_all_gauges_crossfit10_seed42.pkl"
+batch_size = 192
+num_workers = 4
+train_years = [2005, 2019]
+test_years = [2020, 2024]
+val_fraction = 0.01
+t_in_override = 14
+
+[graph]
+source = "a1a2"
+
+[masking]
+mode = "crossfit"
+n_folds = 10
+samples_per_epoch = 10000
+context_fraction = 0.90
+gauge_value_channel = 0
+gauge_mask_channel = 1
+min_context_gauges = 5
+min_loss_gauges = 1
+seed = 42
+dynamic_masking = true
+
+[loss]
+name = "quantile"
+n_quantiles = 32
+higher_q_weight = 1.0
+crossing_weight = 0.0
+delta = 1.0
+
+[model]
+model_type = "gatgcn"
+input_feature_indices = [0, 1, 2, 3]
+gauge_mask_channel = 1
+hide_receiver_gauge_features = true
+receiver_gauge_feature_channels = [0, 1]
+hidden_dim = 256
+fusion_mode = "encoded_late"
+a1_hidden_dim = 64
+a1_feature_channels = [0, 1]
+aux_feature_channels = [2, 3]
+aux_hidden_dim = 32
+gcn_intermediate_dim = 128
+add_self_loops = true
+improved = false
+rnn_layers = 1
+gcn_layers = 2
+gat_layers = 1
+gat_heads = 4
+gat_dropout = 0.20
+use_temporal_attention = false
+attn_hidden = 32
+distance_attention = "learnable_log"
+distance_epsilon_km = 1e-3
+distance_lambda_init = 1.0
+distance_lambda_mode = "per_receiver_node"
+distance_per_head = false
+
+[optim]
+lr = 1e-3
+weight_decay = 1e-4
+
+[scheduler]
+name = "CosineAnnealingLR"
+t_max = 120
+eta_min = 0.0
+
+[transform]
+x_transform = "none"
+y_transform = "none"
+x_clip_min = 0.0
+y_clip_min = 0.0
+
+[trainer]
+max_epochs = 120
+precision = "16-mixed"
+log_every_n_steps = 20
+resume = false
+devices = 1
+accelerator = "gpu"
+strategy = "auto"
+early_stopping = false
+gradient_clip_val = 1.0
+
+[adaptive_adj]
+enabled = false
+mode = "edge"

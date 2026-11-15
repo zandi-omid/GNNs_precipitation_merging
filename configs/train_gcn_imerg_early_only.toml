@@ -1,0 +1,72 @@
+[meta]
+run_name = "IMERG_EARLY_ONLY_GCN_A2_Q32_train2005_2018_val2019"
+
+[training_task]
+mode = "global"
+date = ""
+
+[data]
+seq_dir = "./GSI/data/pyg_sequences_tgsi_T001_2005-01-01_to_2024-12-31_gauge2meshA1_100km_A2knn8_all_gauges_imerg_early_only"
+graph_path = "./data/graphs/gsi_a2_knn8_all_gauges_imerg_early_only.pkl"
+batch_size = 384
+num_workers = 4
+train_years = [2005, 2018]
+val_years = [2019, 2019]
+test_years = [2020, 2024]
+t_in_override = 1
+
+[graph]
+source = "a2"
+
+[masking]
+mode = "all_available"
+samples_per_epoch = 10000
+context_fraction = 1.0
+gauge_value_channel = 0
+gauge_mask_channel = 1
+min_context_gauges = 0
+min_loss_gauges = 1
+seed = 42
+dynamic_masking = false
+
+[loss]
+name = "quantile"
+n_quantiles = 32
+higher_q_weight = 1.0
+crossing_weight = 0.0
+
+[model]
+model_type = "gcn"
+input_feature_indices = [2]
+hidden_dim = 256
+dropout = 0.10
+
+[optim]
+lr = 1e-3
+weight_decay = 1e-4
+
+[scheduler]
+name = "CosineAnnealingLR"
+t_max = 120
+eta_min = 0.0
+
+[transform]
+x_transform = "none"
+y_transform = "none"
+x_clip_min = 0.0
+y_clip_min = 0.0
+
+[trainer]
+max_epochs = 120
+precision = "16-mixed"
+log_every_n_steps = 20
+resume = false
+devices = 1
+accelerator = "gpu"
+strategy = "auto"
+early_stopping = false
+gradient_clip_val = 1.0
+
+[adaptive_adj]
+enabled = false
+mode = "edge"
