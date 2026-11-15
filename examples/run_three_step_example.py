@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import sys
+import warnings
 
 import torch
 
@@ -17,7 +18,13 @@ def main() -> None:
     checkpoint = ROOT / "checkpoints/manual_sparse/gatgcn_best.ckpt"
 
     sample = torch.load(sample_path, map_location="cpu", weights_only=True)
-    model = load_model(checkpoint, sample, graph_path, torch.device("cpu"))
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="A1 and auxiliary feature channels overlap.*",
+            category=UserWarning,
+        )
+        model = load_model(checkpoint, sample, graph_path, torch.device("cpu"))
     model.eval()
     with torch.no_grad():
         prediction = model(sample["x"].unsqueeze(0))

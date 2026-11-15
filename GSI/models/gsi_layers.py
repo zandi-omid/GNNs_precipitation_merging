@@ -57,7 +57,7 @@ def sparse_mm_batch(A_idx, A_val, num_nodes: int, x: torch.Tensor):
 
     x2 = x.permute(1, 0, 2).reshape(num_nodes, B * C)
 
-    with torch.cuda.amp.autocast(enabled=False):
+    with torch.autocast(device_type=x.device.type, enabled=False):
         y2 = torch.sparse.mm(A, x2.float())
 
     y = y2.reshape(num_nodes, B, C).permute(1, 0, 2)
