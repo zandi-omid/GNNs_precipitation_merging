@@ -52,6 +52,15 @@ For example:
 python GSI/train.py --config configs/train_gatgcn_manual_sparse.toml
 ```
 
+## Three-step example
+
+The repository includes one real study-domain sequence truncated to three time
+steps and its graph artifact. Run a checkpoint forward-pass smoke test with:
+
+```bash
+python examples/run_three_step_example.py
+```
+
 ## Data availability
 
 Raw third-party products remain subject to their original providers' licenses.

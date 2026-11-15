@@ -6,5 +6,6 @@ authors:
   - family-names: "Zandi"
     given-names: "Omid"
 repository-code: "https://github.com/zandi-omid/GNNs_precipitation_merging"
+license: MIT
 version: "0.1.0"
 date-released: "2026-11-14"

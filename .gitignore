@@ -28,3 +28,5 @@ data/sequences/
 !checkpoints/**/*.ckpt
 !checkpoints/**/*.pt
 !checkpoints/**/*metadata.pkl
+!examples/data/*.pt
+!examples/data/*.pkl
