@@ -1,0 +1,42 @@
+[meta]
+scenario = "ALLGAUGE_TemporalOOF_MetaMLPQuantile_corrected4head_GATGCN_MLP_q65q70q75_2020_2024"
+[paths]
+meta_train_csvs = [
+    "./GSI/evaluation/all_gauges_temporal_oof_fold00_gatgcn_mlp.csv",
+    "./GSI/evaluation/all_gauges_temporal_oof_fold01_gatgcn_mlp.csv",
+    "./GSI/evaluation/all_gauges_temporal_oof_fold02_gatgcn_mlp.csv",
+    "./GSI/evaluation/all_gauges_temporal_oof_fold03_gatgcn_mlp.csv",
+    "./GSI/evaluation/all_gauges_temporal_oof_fold04_gatgcn_mlp.csv",
+]
+final_eval_csv = "./GSI/evaluation/master_holdout_comparison_ALLGAUGE_crossfit10_corrected4head_GATGCNq70_MLPq75_References_2020_2024.csv"
+out_csv = "./GSI/evaluation/master_holdout_comparison_ALLGAUGE_TemporalOOF_MetaMLPQuantile_corrected4head_GATGCN_MLP_q65q70q75_2020_2024.csv"
+model_out = "./GSI/evaluation/stacker_ALLGAUGE_TemporalOOF_MetaMLPQuantile_corrected4head_GATGCN_MLP_q65q70q75_2020_2024.pt"
+[stacking]
+target_col = "gauge"
+feature_cols = ["gatgcn_q65", "gatgcn_q70", "gatgcn_q75", "mlp_q65", "mlp_q70", "mlp_q75"]
+output_col = "stack_temporal_oof_meta_mlp"
+output_label = "TemporalOOF-MetaMLP"
+clip_min = 0.0
+comparison_cols = ["gatgcn_q70", "mlp_q75", "idw_train", "era5", "imerg", "prism", "mrms", "mswep", "gmcp"]
+[auxiliary]
+csv = ""
+date_col = "date"
+node_col = "node"
+feature_cols = []
+[quantile_output]
+quantiles = [0.65, 0.70, 0.75]
+[meta_model]
+loss_name = "quantile"
+loss_n_quantiles = 32
+loss_crossing_weight = 0.01
+hidden_dims = [128, 64, 32]
+dropout = 0.05
+lr = 3e-4
+weight_decay = 1e-4
+max_epochs = 300
+batch_size = 8192
+num_workers = 2
+random_state = 42
+standardize_features = true
+standardize_target = true
+log_every_n_epochs = 10

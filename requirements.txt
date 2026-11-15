@@ -1,0 +1,16 @@
+earthaccess>=0.14
+matplotlib>=3.8
+netCDF4>=1.7
+networkx>=3.2
+numpy>=1.26
+pandas>=2.1
+pytorch-lightning>=2.2
+rioxarray>=0.15
+scikit-learn>=1.4
+scipy>=1.11
+seaborn>=0.13
+tensorboard>=2.15
+tomli>=2.0; python_version < "3.11"
+torch>=2.2
+tqdm>=4.66
+xarray>=2024.1

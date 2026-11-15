@@ -1,58 +1,32 @@
-# Logs and training artifacts
-logs/
-lightning_logs/
-
-# Stats / large analysis outputs
-stats/
-
-# Large data files in general
-data/**/*.nc
-data/**/*.h5
-data/**/*.hdf5
-*.nc
-*.h5
-*.hdf5
-
-# Checkpoints / model weights
-checkpoints/
-*.ckpt
-
-# Jupyter stuff
+__pycache__/
+*.py[cod]
 .ipynb_checkpoints/
-*.ipynb
-
-__pycache__/
-*.pyc
-
-# =========================
-# Data / outputs (DO NOT TRACK)
-# =========================
-data/
-checkpoints/
-logs/
-lightning_logs/
-tensorboard_scalar_plots_TGCN/
-
-# PyTorch / Lightning
-*.ckpt
-*.pt
-
-# Python
-__pycache__/
-*.pyc
-
-# SLURM
-*.out
-*.err
-
-# Local envs
+.pytest_cache/
 .env
 
-# Inference outputs
-inference/
-*.npz
-*.nc
-
-# logs / checkpoints
 logs/
-checkpoints/
+lightning_logs/
+outputs/
+inference/
+evaluation/outputs/
+
+data/raw/
+data/processed/
+data/graphs/
+data/sequences/
+*.nc
+*.nc4
+*.h5
+*.hdf5
+*.tif
+*.pkl
+*.npz
+*.pt
+*.ckpt
+
+# Explicitly retain the small, documented release artifacts.
+!checkpoints/**/*.ckpt
+!checkpoints/**/*.pt
+!checkpoints/**/*metadata.pkl
+!examples/data/*.pt
+!examples/data/*.pkl

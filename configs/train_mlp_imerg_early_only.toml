@@ -1,0 +1,39 @@
+[meta]
+run_name = "IMERG_EARLY_ONLY_MLP_Q32_train2005_2018_val2019"
+
+[data]
+csv_path = "./ANN/df_CSV_files/df_gsi_all_gauges_imerg_early_only_2005_2024.csv"
+feature_cols = ["IMERG_Early"]
+batch_size = 16384
+num_workers = 4
+train_years = [2005, 2018]
+val_years = [2019, 2019]
+test_years = [2020, 2024]
+
+[model]
+hidden_dims = [256, 256, 128, 64]
+dropout = 0.10
+
+[loss]
+name = "quantile"
+n_quantiles = 32
+higher_q_weight = 1.0
+crossing_weight = 0.0
+
+[optim]
+lr = 1e-3
+weight_decay = 1e-4
+
+[scheduler]
+name = "CosineAnnealingLR"
+t_max = 200
+eta_min = 0.0
+
+[trainer]
+max_epochs = 200
+precision = "32-true"
+log_every_n_steps = 20
+devices = 1
+accelerator = "cpu"
+strategy = "auto"
+early_stopping = false
